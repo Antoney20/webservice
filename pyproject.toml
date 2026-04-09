@@ -1,0 +1,20 @@
+[project]
+name = "webserver"
+version = "0.1.0"
+description = "Backend server for CEM website"
+authors = [
+    {name = "Muchiri Antony"}
+]
+license = "MIT"
+requires-python = "3.14.0"
+dependencies = [
+    "django (>=6.0.2,<7.0.0)",
+    "djangorestframework (>=3.16.1,<4.0.0)",
+    "django-cors-headers (>=4.9.0,<5.0.0)"
+]
+
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
