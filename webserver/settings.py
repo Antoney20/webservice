@@ -10,7 +10,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-replace-in-production")
 DEBUG      = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
@@ -49,7 +48,8 @@ INSTALLED_APPS = [
 # ---------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    "core.middleware.IPBlockMiddleware",         
+    "core.middleware.media_protection.MediaProtectionMiddleware",
+    "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -245,3 +245,18 @@ if not DEBUG:
     
     
     
+
+
+# ── Media ────────────────────────────────────────────────────────
+MEDIA_URL  = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+ 
+# ── Allowed origins for media reads ──────────────────────────────
+# Requests whose Origin/Referer is NOT in this list are blocked (403).
+# # Defaults to ALLOWED_HOSTS when not set.
+# MEDIA_ALLOWED_ORIGINS = [
+#     "https://yoursite.com",
+#     "https://www.yoursite.com",
+#     "http://localhost:3000",   # Next.js / Vite dev server
+#     "http://localhost:8000",   # Django dev server (for admin)
+# ]

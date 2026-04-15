@@ -97,7 +97,6 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return f"{self.name} <{self.email}>"
 
-    # convenience helpers used by permission classes
     @property
     def is_admin(self) -> bool:
         return self.role == UserRole.ADMIN
@@ -118,12 +117,13 @@ class Content(models.Model):
     published_at = models.DateTimeField(null=True, blank=True, db_index=True, db_column="publishedAt")
     status = models.CharField(max_length=20, choices=ContentStatus.choices, default=ContentStatus.DRAFT, db_index=True)
     featured = models.BooleanField(default=False, db_index=True)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/content/', null=True, blank=True)
     image_alt = models.CharField(max_length=255, null=True, blank=True, db_column="imageAlt")
     category = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     tags = models.JSONField(default=list, blank=True)
     author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="contents", db_index=True,  db_column="authorId")
     
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
@@ -148,7 +148,7 @@ class ContentSection(models.Model):
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField()
     order = models.IntegerField()
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/content/', null=True, blank=True)
     image_alt = models.CharField(max_length=255, null=True, blank=True, db_column="imageAlt")
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
@@ -173,7 +173,7 @@ class TeamMember(models.Model):
     title = models.CharField(max_length=255)
     bio = models.TextField(null=True, blank=True)
     research_interests = models.TextField(null=True, blank=True)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/people/', null=True, blank=True)
     education = models.TextField(null=True, blank=True)
     department = models.CharField(max_length=255, db_index=True)
     featured = models.BooleanField(default=False, db_index=True)
@@ -186,6 +186,7 @@ class TeamMember(models.Model):
     is_fellow = models.BooleanField(default=False)
     is_suspended = models.BooleanField(default=False)
     in_team = models.BooleanField(default=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -221,7 +222,7 @@ class Fellowship(models.Model):
     institution = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     description = models.TextField(null=True, blank=True)
     funding_source = models.CharField(max_length=255, null=True, blank=True)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/fellows/', null=True, blank=True)
 
     # Relationship to TeamMember (nullable — fellow may not be a team member)
     team_member = models.ForeignKey(
@@ -239,6 +240,7 @@ class Fellowship(models.Model):
     custom_dept = models.CharField(max_length=255, null=True, blank=True)
     custom_email = models.EmailField(null=True, blank=True)
 
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -257,10 +259,6 @@ class Fellowship(models.Model):
         return f"{self.name} ({self.year})"
 
 
-# ---------------------------------------------------------------------------
-# Internship
-# ---------------------------------------------------------------------------
-
 class Internship(models.Model):
     id = models.CharField(max_length=255, primary_key=True)
     name = models.CharField(max_length=255, db_index=True)
@@ -273,6 +271,8 @@ class Internship(models.Model):
     start_date = models.DateTimeField(null=True, blank=True)
     end_date = models.DateTimeField(null=True, blank=True)
     description = models.TextField(null=True, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -310,6 +310,8 @@ class Publication(models.Model):
     publication_type = models.CharField(max_length=100, null=True, blank=True, db_index=True)
     category = models.CharField(max_length=255, null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -334,7 +336,7 @@ class Seminar(models.Model):
     id = models.CharField(max_length=255, primary_key=True)
     title = models.CharField(max_length=500, db_index=True)
     description = models.TextField()
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/seminar/', null=True, blank=True)
     video = models.CharField(max_length=500, null=True, blank=True)
     link = models.URLField(null=True, blank=True)
     author = models.CharField(max_length=255, db_index=True)
@@ -344,6 +346,8 @@ class Seminar(models.Model):
     upcoming = models.BooleanField(default=False, db_index=True)
     featured = models.BooleanField(default=False, db_index=True)
     tags = models.JSONField(default=list, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -369,7 +373,7 @@ class Course(models.Model):
     id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=500)
     description = models.TextField()
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/course/', null=True, blank=True)
     date = models.CharField(max_length=100)
     location = models.CharField(max_length=255)
     link = models.URLField(null=True, blank=True)
@@ -377,6 +381,8 @@ class Course(models.Model):
     duration = models.CharField(max_length=100, null=True, blank=True)
     target = models.CharField(max_length=255, null=True, blank=True)
     tools = models.CharField(max_length=255, null=True, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
@@ -395,13 +401,15 @@ class Training(models.Model):
     id = models.CharField(max_length=255, primary_key=True)
     title = models.CharField(max_length=500)
     description = models.TextField()
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/trainings/', null=True, blank=True)
     date = models.CharField(max_length=100)
     upcoming = models.BooleanField(default=False)
     category = models.CharField(max_length=255)
     application_deadline = models.CharField(max_length=100, null=True, blank=True)
     location = models.CharField(max_length=255)
     link = models.URLField(null=True, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
@@ -422,7 +430,7 @@ class News(models.Model):
     excerpt = models.TextField()
     body = models.TextField()
     date = models.CharField(max_length=100)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/news/', null=True, blank=True)
     categories = models.JSONField(default=list, blank=True)
     tags = models.JSONField(default=list, blank=True)
     featured = models.BooleanField(default=False)
@@ -450,10 +458,13 @@ class Report(models.Model):
     tags = models.JSONField(default=list, blank=True)
     keywords = models.JSONField(default=list, blank=True)
     is_public = models.BooleanField(default=False)
+    file = models.FileField(upload_to='reports/', null=True, blank=True)
     file_name = models.CharField(max_length=500)
     drive_link = models.URLField(null=True, blank=True)
     file_type = models.CharField(max_length=100, null=True, blank=True)
     file_size = models.IntegerField(null=True, blank=True)
+    
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
@@ -491,7 +502,7 @@ class DataCatalogue(models.Model):
     is_public = models.BooleanField(default=True, db_index=True)
     is_featured = models.BooleanField(default=False, db_index=True)
     year = models.IntegerField(null=True, blank=True, db_index=True)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/catalogue/', null=True, blank=True)
     document_url = models.URLField(null=True, blank=True)
     external_url = models.URLField(null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)
@@ -551,7 +562,7 @@ class PolicyBrief(models.Model):
     recommendations = models.JSONField(default=list, blank=True)
     conclusions = models.TextField(null=True, blank=True)
     publication_ids = models.JSONField(default=list, blank=True)
-    image = models.ImageField(upload_to='site/images/', null=True, blank=True)
+    image = models.ImageField(upload_to='site/images/policy/', null=True, blank=True)
     tags = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")

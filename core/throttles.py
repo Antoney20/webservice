@@ -1,4 +1,4 @@
-from core.middleware import record_throttle_violation, get_client_ip
+from core.middleware.tracking import record_throttle_violation, get_client_ip
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
