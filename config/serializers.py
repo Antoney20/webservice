@@ -1,4 +1,6 @@
 from rest_framework import serializers
+from django.db import IntegrityError
+from rest_framework.response import Response
 
 from core.validators.email import validate_email_address
 from .models import (

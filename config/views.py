@@ -1,7 +1,8 @@
 from rest_framework import viewsets
-
+from rest_framework.response import Response
+from rest_framework import status
+from django.db import IntegrityError
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, RequiresAdmin
-
 
 from .models import (
     User, Content, ContentSection, TeamMember, Fellowship,
@@ -20,12 +21,44 @@ from .serializers import (
     RateLimitSerializer, AuditLogSerializer, SystemLogSerializer,
 )
 
+
+def ok(data=None, status_code=status.HTTP_200_OK):
+    body = {"success": True}
+    if data is not None:
+        body["data"] = data
+    return Response(body, status=status_code)
+
+
+def ok_created():
+    return Response({"success": True}, status=status.HTTP_201_CREATED)
+
+
+def fail(errors=None, message=None, status_code=status.HTTP_400_BAD_REQUEST):
+    body = {"success": False}
+    if errors:
+        body["errors"] = errors
+    if message:
+        body["message"] = message
+    return Response(body, status=status_code)
+
+
 class UserViewSet(viewsets.ModelViewSet):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes = [RequiresAdmin]
     search_fields = ["name", "email"]
     ordering = ["-created_at"]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="User already exists.")
+        return ok_created()
+
 
 
 class ContentViewSet(viewsets.ModelViewSet):
@@ -48,6 +81,16 @@ class ContentViewSet(viewsets.ModelViewSet):
                 pass
         serializer.save()
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create content.")
+        return ok_created()
+
 
 class ContentSectionViewSet(viewsets.ModelViewSet):
     queryset = ContentSection.objects.select_related("content").all()
@@ -55,6 +98,17 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
     permission_classes = [EditorWrite]
     filterset_fields = ["content"]
     ordering = ["order"]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create content section.")
+        return ok_created()
+
 
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
@@ -66,6 +120,22 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
     ordering_fields = ["name", "created_at"]
     ordering = ["name"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create team member.")
+        return ok_created()
+
+
 
 class FellowshipViewSet(viewsets.ModelViewSet):
     queryset = Fellowship.objects.select_related("team_member").all()
@@ -75,6 +145,21 @@ class FellowshipViewSet(viewsets.ModelViewSet):
     search_fields = ["name", "topic"]
     ordering_fields = ["year", "created_at"]
     ordering = ["-year"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create fellowship.")
+        return ok_created()
 
 
 class InternshipViewSet(viewsets.ModelViewSet):
@@ -86,6 +171,22 @@ class InternshipViewSet(viewsets.ModelViewSet):
     ordering_fields = ["year", "created_at"]
     ordering = ["-year"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create internship.")
+        return ok_created()
+
+
 
 class PublicationViewSet(viewsets.ModelViewSet):
     queryset = Publication.objects.all()
@@ -95,6 +196,22 @@ class PublicationViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "abstract", "journal"]
     ordering_fields = ["publication_year", "date_published", "created_at"]
     ordering = ["-publication_year"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create publication.")
+        return ok_created()
+
 
 
 class SeminarViewSet(viewsets.ModelViewSet):
@@ -106,6 +223,21 @@ class SeminarViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create seminar.")
+        return ok_created()
+
 
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
@@ -115,6 +247,21 @@ class CourseViewSet(viewsets.ModelViewSet):
     search_fields = ["title", "description", "location"]
     ordering_fields = ["date", "created_at"]
     ordering = ["-created_at"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create course.")
+        return ok_created()
 
 
 class TrainingViewSet(viewsets.ModelViewSet):
@@ -126,6 +273,25 @@ class TrainingViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create training.")
+        return ok_created()
+
+
+# ---------------------------------------------------------------------------
+# News
+# ---------------------------------------------------------------------------
 
 class NewsViewSet(viewsets.ModelViewSet):
     queryset = News.objects.all()
@@ -136,6 +302,25 @@ class NewsViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create news.")
+        return ok_created()
+
+
+# ---------------------------------------------------------------------------
+# Reports & Downloads
+# ---------------------------------------------------------------------------
 
 class ReportViewSet(viewsets.ModelViewSet):
     queryset = Report.objects.all()
@@ -146,6 +331,21 @@ class ReportViewSet(viewsets.ModelViewSet):
     ordering_fields = ["year_published", "date_published", "created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create report.")
+        return ok_created()
+
 
 class DownloadViewSet(viewsets.ModelViewSet):
     queryset = Download.objects.select_related("report").all()
@@ -154,6 +354,20 @@ class DownloadViewSet(viewsets.ModelViewSet):
     filterset_fields = ["report"]
     ordering = ["-created_at"]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to record download.")
+        return ok_created()
+
+
+# ---------------------------------------------------------------------------
+# Data Catalogue
+# ---------------------------------------------------------------------------
 
 class DataCatalogueViewSet(viewsets.ModelViewSet):
     queryset = DataCatalogue.objects.all()
@@ -164,6 +378,21 @@ class DataCatalogueViewSet(viewsets.ModelViewSet):
     ordering_fields = ["year", "downloads", "created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create data catalogue entry.")
+        return ok_created()
+
 
 class DataCatalogueViewViewSet(viewsets.ModelViewSet):
     queryset = DataCatalogueView.objects.select_related("item").all()
@@ -172,6 +401,20 @@ class DataCatalogueViewViewSet(viewsets.ModelViewSet):
     filterset_fields = ["item"]
     ordering = ["-created_at"]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to record catalogue view.")
+        return ok_created()
+
+
+# ---------------------------------------------------------------------------
+# Policy Briefs
+# ---------------------------------------------------------------------------
 
 class PolicyBriefViewSet(viewsets.ModelViewSet):
     queryset = PolicyBrief.objects.all()
@@ -181,12 +424,41 @@ class PolicyBriefViewSet(viewsets.ModelViewSet):
     ordering_fields = ["created_at"]
     ordering = ["-created_at"]
 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create policy brief.")
+        return ok_created()
+
+
+# ---------------------------------------------------------------------------
+# Admin-only
+# ---------------------------------------------------------------------------
 
 class RateLimitViewSet(viewsets.ModelViewSet):
     queryset = RateLimit.objects.all()
     serializer_class = RateLimitSerializer
     permission_classes = [RequiresAdmin]
     ordering = ["-created_at"]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create rate limit.")
+        return ok_created()
 
 
 class AuditLogViewSet(viewsets.ModelViewSet):
@@ -197,6 +469,16 @@ class AuditLogViewSet(viewsets.ModelViewSet):
     search_fields = ["user_email", "resource_id", "route"]
     ordering = ["-created_at"]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create audit log.")
+        return ok_created()
+
 
 class SystemLogViewSet(viewsets.ModelViewSet):
     queryset = SystemLog.objects.all()
@@ -206,8 +488,20 @@ class SystemLogViewSet(viewsets.ModelViewSet):
     search_fields = ["message", "component"]
     ordering = ["-created_at"]
 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to create system log.")
+        return ok_created()
 
 
+# ---------------------------------------------------------------------------
+# Public-submit (Subscription & ContactForm)
+# ---------------------------------------------------------------------------
 
 class SubscriptionViewSet(viewsets.ModelViewSet):
     queryset           = Subscription.objects.all()
@@ -224,12 +518,12 @@ class SubscriptionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            return Response(
-                {"success": False, "errors": serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        self.perform_create(serializer)
-        return Response({"success": True}, status=status.HTTP_201_CREATED)
+            return fail(message="Failed to subscribe.")
+        try:
+            self.perform_create(serializer)
+        except IntegrityError:
+            return fail(message="Failed to subscribe.")
+        return ok_created()
 
 
 class ContactFormViewSet(viewsets.ModelViewSet):
@@ -249,10 +543,6 @@ class ContactFormViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            return Response(
-                {"success": False, "errors": serializer.errors},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+            return fail(errors=serializer.errors)
         self.perform_create(serializer)
-        return Response({"success": True}, status=status.HTTP_201_CREATED)
-
+        return ok_created()
