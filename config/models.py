@@ -35,9 +35,6 @@ class ReportType(models.TextChoices):
     OTHER            = "OTHER"
 
 
-# ---------------------------------------------------------------------------
-# Manager
-# ---------------------------------------------------------------------------
 
 class UserManager(BaseUserManager):
 

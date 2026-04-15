@@ -8,7 +8,9 @@ from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
 
-from core.permissions import IsAuthenticatedActive
+from core.permissions import IsAuthenticated
+
+
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -121,7 +123,7 @@ def refresh(request):
 # ---------------------------------------------------------------------------
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticatedActive])
+@permission_classes([IsAuthenticated])
 def logout(request):
     """
     POST /api/auth/logout/
@@ -141,7 +143,7 @@ def logout(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticatedActive])
+@permission_classes([IsAuthenticated])
 def me(request):
     """
     GET /api/auth/me/

@@ -1,4 +1,6 @@
 from rest_framework import serializers
+
+from core.validators.email import validate_email_address
 from .models import (
     User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
@@ -106,15 +108,20 @@ class PolicyBriefSerializer(serializers.ModelSerializer):
 
 class SubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
-        model = Subscription
+        model  = Subscription
         fields = "__all__"
+
+    def validate_email(self, value):
+        return validate_email_address(value)
 
 
 class ContactFormSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ContactForm
+        model  = ContactForm
         fields = "__all__"
 
+    def validate_email(self, value):
+        return validate_email_address(value)
 
 class RateLimitSerializer(serializers.ModelSerializer):
     class Meta:

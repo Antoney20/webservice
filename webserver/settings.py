@@ -13,7 +13,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-replace-in-production")
 DEBUG      = os.getenv("DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
 
 AUTH_USER_MODEL = "config.User"
 
@@ -49,7 +49,7 @@ INSTALLED_APPS = [
 # ---------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    "core.middleware.IPBlockMiddleware",          # ← block bad IPs immediately
+    "core.middleware.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -98,7 +98,7 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "core.permissions.PublicReadEditorWrite",
+        "core.permissions.PublicReadOnly",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -133,7 +133,7 @@ CACHES = {
     }
 }
 
-# Production Redis example:
+# Production 
 # CACHES = {
 #     "default": {
 #         "BACKEND":  "django.core.cache.backends.redis.RedisCache",
@@ -221,10 +221,6 @@ WSGI_APPLICATION = "webserver.wsgi.application"
 STATIC_URL  = "/static/"
 STATIC_ROOT = BASE_DIR / "static"
 
-
-# ---------------------------------------------------------------------------
-# Internationalisation
-# ---------------------------------------------------------------------------
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE     = "UTC"

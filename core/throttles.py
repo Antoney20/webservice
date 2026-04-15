@@ -1,39 +1,29 @@
+from core.middleware import record_throttle_violation, get_client_ip
 from rest_framework.throttling import AnonRateThrottle, UserRateThrottle
 
 
-# ---------------------------------------------------------------------------
-# Anonymous throttles  (applied to public / unauthenticated endpoints)
-# ---------------------------------------------------------------------------
+class _ViolationMixin:
+    def allow_request(self, request, view):
+        self.request = request
+        return super().allow_request(request, view)
 
-class AnonBurstThrottle(AnonRateThrottle):
-    """Short burst limit — prevents rapid-fire abuse."""
-    scope = "anon_burst"       # maps to THROTTLE_RATES["anon_burst"]
+    def throttle_failure(self):
+        ip = get_client_ip(self.request)
+        record_throttle_violation(ip)
+        return super().throttle_failure()
 
 
-class AnonSustainedThrottle(AnonRateThrottle):
-    """Sustained hourly cap for anonymous users."""
+class AnonBurstThrottle(_ViolationMixin, AnonRateThrottle):
+    scope = "anon_burst"
+
+class AnonSustainedThrottle(_ViolationMixin, AnonRateThrottle):
     scope = "anon_sustained"
 
-
-# ---------------------------------------------------------------------------
-# Authenticated throttles
-# ---------------------------------------------------------------------------
-
-class AuthBurstThrottle(UserRateThrottle):
+class AuthBurstThrottle(_ViolationMixin, UserRateThrottle):
     scope = "auth_burst"
 
-
-class AuthSustainedThrottle(UserRateThrottle):
+class AuthSustainedThrottle(_ViolationMixin, UserRateThrottle):
     scope = "auth_sustained"
 
-
-# ---------------------------------------------------------------------------
-# Strict throttle — for sensitive write endpoints (subscribe, contact)
-# ---------------------------------------------------------------------------
-
-class SensitiveAnonThrottle(AnonRateThrottle):
-    """
-    Very tight limit for anonymous write endpoints.
-    Blocks after a small number of submissions per hour.
-    """
+class SensitiveAnonThrottle(_ViolationMixin, AnonRateThrottle):
     scope = "sensitive_anon"
