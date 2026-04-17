@@ -1,3 +1,5 @@
+import json
+
 from rest_framework import serializers
 from django.db import IntegrityError
 from rest_framework.response import Response
@@ -18,42 +20,65 @@ class UserSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
+
 class ContentSectionSerializer(serializers.ModelSerializer):
-    id = serializers.CharField(read_only=True)
+    id    = serializers.UUIDField(read_only=True)
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+
     class Meta:
-        model = ContentSection
+        model  = ContentSection
         fields = "__all__"
-
-
 
 
 class _ContentBase(serializers.ModelSerializer):
-    """Shared fields for both list and detail serializers."""
-    # created_by  — the User who hit the API (set in perform_create, read-only after that)
-    id = serializers.CharField(read_only=True)
+    id         = serializers.UUIDField(read_only=True)
     created_by = UserSerializer(read_only=True)
- 
+    image      = serializers.ImageField(
+                     required=False,
+                     allow_null=True,
+                     allow_empty_file=True,
+                     use_url=True,
+                 )
+
     class Meta:
-        model = Content
-        fields = "__all__"
+        model            = Content
+        fields           = "__all__"
         read_only_fields = ["created_at", "updated_at", "date", "created_by"]
- 
- 
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+    def validate_tags(self, value):
+        # Already a list (e.g. from JSON API)
+        if isinstance(value, list):
+            return value
+        # Comma-separated string from FormData e.g. "tag1, tag2"
+        if isinstance(value, str):
+            # Try JSON first in case it's a stringified array
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+            # Fall back to comma-split
+            return [t.strip() for t in value.split(',') if t.strip()]
+        return []
 class ContentListSerializer(_ContentBase):
     """Lightweight — no sections. Used for list()."""
     pass
- 
- 
+
+
 class ContentSerializer(_ContentBase):
-    """
-    Full detail — includes nested sections (read-only).
-    Sections are ordered by `order` ascending.
-    """
+    """Full detail — includes nested sections ordered by `order`."""
     sections = ContentSectionSerializer(many=True, read_only=True)
- 
+
     class Meta(_ContentBase.Meta):
         pass
- 
+
+
 
 
 

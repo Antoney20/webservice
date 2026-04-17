@@ -141,6 +141,7 @@ class Content(models.Model):
 
 
 class ContentSection(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     content = models.ForeignKey(Content, on_delete=models.CASCADE, related_name="sections", db_index=True)
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField()
@@ -163,8 +164,6 @@ class ContentSection(models.Model):
 
 
 class TeamMember(models.Model):
-    # Using AutoField (int) to match Prisma's autoincrement PK
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, db_index=True)
     role = models.CharField(max_length=255, db_index=True)
     title = models.CharField(max_length=255)
@@ -207,6 +206,7 @@ class TeamMember(models.Model):
 # ---------------------------------------------------------------------------
 
 class Fellowship(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, db_index=True)
     topic = models.CharField(max_length=255)
     type = models.CharField(max_length=100, db_index= True)
@@ -256,6 +256,7 @@ class Fellowship(models.Model):
 
 
 class Internship(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, db_index=True)
     course = models.CharField(max_length=255)
     university = models.CharField(max_length=255)
@@ -392,6 +393,7 @@ class Course(models.Model):
 # ---------------------------------------------------------------------------
 
 class Training(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500)
     description = models.TextField()
     image = models.ImageField(upload_to='site/images/trainings/', null=True, blank=True)
@@ -565,7 +567,6 @@ class PolicyBrief(models.Model):
 
 
 class Subscription(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email      = models.EmailField(unique=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
@@ -583,7 +584,6 @@ class Subscription(models.Model):
 # ---------------------------------------------------------------------------
 
 class ContactForm(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     full_name  = models.CharField(max_length=255, db_column="fullName")
     email      = models.EmailField()
     subject    = models.CharField(max_length=500)

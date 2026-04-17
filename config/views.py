@@ -1,3 +1,5 @@
+import uuid
+
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status
@@ -60,6 +62,8 @@ class UserViewSet(viewsets.ModelViewSet):
         return ok_created()
 
 
+
+
 class ContentViewSet(viewsets.ModelViewSet):
     queryset = Content.objects.all()
     permission_classes = [EditorWrite]
@@ -68,22 +72,41 @@ class ContentViewSet(viewsets.ModelViewSet):
     ordering_fields = ["date", "published_at", "created_at"]
     ordering = ["-created_at"]
 
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        print(f"fetching content for id = {pk}")
+
+        try:
+            try:
+                # Try UUID first
+                obj = Content.objects.prefetch_related("sections").get(pk=uuid.UUID(pk))
+            except (ValueError, TypeError):
+                # Fallback to raw string
+                obj = Content.objects.prefetch_related("sections").get(pk=pk)
+
+            print(f"found content : {obj.title}")
+
+        except Content.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+
     def get_serializer_class(self):
-        # list() → lightweight, no sections
-        # retrieve() / create() / update() → full, with nested sections
         if self.action == "list":
             return ContentListSerializer
         return ContentSerializer
 
     def get_queryset(self):
         qs = super().get_queryset()
-        # Prefetch sections only when we'll actually return them
         if self.action != "list":
             qs = qs.prefetch_related("sections")
         return qs
 
     def perform_create(self, serializer):
-
         serializer.save(created_by=self.request.user)
 
     def create(self, request, *args, **kwargs):
@@ -95,6 +118,11 @@ class ContentViewSet(viewsets.ModelViewSet):
         except IntegrityError:
             return fail(message="Failed to create content.")
         return ok_created()
+
+
+
+
+# from config.models import Content
 
 class ContentSectionViewSet(viewsets.ModelViewSet):
     queryset = ContentSection.objects.select_related("content").all()
