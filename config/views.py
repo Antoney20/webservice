@@ -123,7 +123,6 @@ class ContentViewSet(viewsets.ModelViewSet):
 
 
 # from config.models import Content
-
 class ContentSectionViewSet(viewsets.ModelViewSet):
     queryset = ContentSection.objects.select_related("content").all()
     serializer_class = ContentSectionSerializer
@@ -144,18 +143,40 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
 
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
-    queryset = TeamMember.objects.all()
-    serializer_class = TeamMemberSerializer
+    queryset           = TeamMember.objects.select_related("created_by").all()
+    serializer_class   = TeamMemberSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["department", "featured", "alumni", "status", "is_active", "in_team"]
-    search_fields = ["name", "role", "title"]
-    ordering_fields = ["name", "created_at"]
-    ordering = ["name"]
+    filterset_fields   = ["department", "featured", "alumni", "status", "is_active", "in_team", "is_fellow"]
+    search_fields      = ["name", "role", "title", "department"]
+    ordering_fields    = ["name", "created_at", "department"]
+    ordering           = ["name"]
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            # Try integer first (existing rows seeded with int IDs)
+            obj = TeamMember.objects.get(pk=int(pk))
+        except (ValueError, TypeError):
+            # Fall back to UUID for new rows
+            try:
+                obj = TeamMember.objects.get(pk=uuid.UUID(pk))
+            except (ValueError, TeamMember.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        except TeamMember.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -167,7 +188,35 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
             return fail(message="Failed to create team member.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_update(serializer)
+        except IntegrityError:
+            return fail(message="Failed to update team member.")
+        return ok(data=serializer.data)
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+        return ok(message="Team member deleted.")
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        return ok(data=serializer.data)
 
 class FellowshipViewSet(viewsets.ModelViewSet):
     queryset = Fellowship.objects.select_related("team_member").all()

@@ -83,9 +83,50 @@ class ContentSerializer(_ContentBase):
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+    image      = serializers.ImageField(
+                     required=False,
+                     allow_null=True,
+                     allow_empty_file=True,
+                     use_url=True,
+                 )
+
     class Meta:
-        model = TeamMember
-        fields = "__all__"
+        model            = TeamMember
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+    def validate_specializations(self, value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                pass
+            return [v.strip() for v in value.split(",") if v.strip()]
+        return []
+
+    def validate_user_titles(self, value):
+        if isinstance(value, list):
+            return value
+        if isinstance(value, str):
+            try:
+                return json.loads(value)
+            except (json.JSONDecodeError, ValueError):
+                return [v.strip() for v in value.split(",") if v.strip()]
+        return []
+
+    def validate_current_research(self, value):
+        return self.validate_user_titles(value)
 
 
 class FellowshipSerializer(serializers.ModelSerializer):
