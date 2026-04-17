@@ -19,15 +19,42 @@ class UserSerializer(serializers.ModelSerializer):
 
 
 class ContentSectionSerializer(serializers.ModelSerializer):
+    id = serializers.CharField(read_only=True)
     class Meta:
         model = ContentSection
         fields = "__all__"
 
 
-class ContentSerializer(serializers.ModelSerializer):
+
+
+class _ContentBase(serializers.ModelSerializer):
+    """Shared fields for both list and detail serializers."""
+    # created_by  — the User who hit the API (set in perform_create, read-only after that)
+    id = serializers.CharField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+ 
     class Meta:
         model = Content
         fields = "__all__"
+        read_only_fields = ["created_at", "updated_at", "date", "created_by"]
+ 
+ 
+class ContentListSerializer(_ContentBase):
+    """Lightweight — no sections. Used for list()."""
+    pass
+ 
+ 
+class ContentSerializer(_ContentBase):
+    """
+    Full detail — includes nested sections (read-only).
+    Sections are ordered by `order` ascending.
+    """
+    sections = ContentSectionSerializer(many=True, read_only=True)
+ 
+    class Meta(_ContentBase.Meta):
+        pass
+ 
+
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):

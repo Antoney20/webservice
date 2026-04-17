@@ -1,3 +1,5 @@
+import uuid
+
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 
@@ -60,10 +62,6 @@ class UserManager(BaseUserManager):
         return self._create(email, password, **extra)
 
 
-# ---------------------------------------------------------------------------
-# User
-# ---------------------------------------------------------------------------
-
 class User(AbstractBaseUser, PermissionsMixin):
     """
     First-party user model.  email is the login credential.
@@ -108,7 +106,7 @@ class User(AbstractBaseUser, PermissionsMixin):
 
 
 class Content(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
     excerpt = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
@@ -121,9 +119,9 @@ class Content(models.Model):
     image_alt = models.CharField(max_length=255, null=True, blank=True, db_column="imageAlt")
     category = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     tags = models.JSONField(default=list, blank=True)
-    author = models.ForeignKey(User, on_delete=models.CASCADE, related_name="contents", db_index=True,  db_column="authorId")
+    author_name = models.CharField(max_length=255, null=True, blank=True)
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_contents")
     
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
@@ -133,7 +131,7 @@ class Content(models.Model):
             models.Index(fields=["type"]),
             models.Index(fields=["status"]),
             models.Index(fields=["featured"]),
-            models.Index(fields=["author"]),
+            models.Index(fields=["author_name"]),
             models.Index(fields=["published_at"]),
             models.Index(fields=["category"]),
         ]
@@ -143,7 +141,6 @@ class Content(models.Model):
 
 
 class ContentSection(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     content = models.ForeignKey(Content, on_delete=models.CASCADE, related_name="sections", db_index=True)
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField()
@@ -167,7 +164,7 @@ class ContentSection(models.Model):
 
 class TeamMember(models.Model):
     # Using AutoField (int) to match Prisma's autoincrement PK
-    id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=255, db_index=True)
     role = models.CharField(max_length=255, db_index=True)
     title = models.CharField(max_length=255)
@@ -210,10 +207,9 @@ class TeamMember(models.Model):
 # ---------------------------------------------------------------------------
 
 class Fellowship(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     name = models.CharField(max_length=255, db_index=True)
     topic = models.CharField(max_length=255)
-    type = models.CharField(max_length=100, db_index=True)
+    type = models.CharField(max_length=100, db_index= True)
     year = models.CharField(max_length=20, db_index=True)
     status = models.CharField(max_length=50, db_index=True)
     mentor = models.CharField(max_length=255, null=True, blank=True)
@@ -260,7 +256,6 @@ class Fellowship(models.Model):
 
 
 class Internship(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     name = models.CharField(max_length=255, db_index=True)
     course = models.CharField(max_length=255)
     university = models.CharField(max_length=255)
@@ -295,7 +290,7 @@ class Internship(models.Model):
 # ---------------------------------------------------------------------------
 
 class Publication(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500, db_index=True)
     abstract = models.TextField(null=True, blank=True)
     journal = models.CharField(max_length=255, null=True, blank=True)
@@ -333,7 +328,7 @@ class Publication(models.Model):
 # ---------------------------------------------------------------------------
 
 class Seminar(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500, db_index=True)
     description = models.TextField()
     image = models.ImageField(upload_to='site/images/seminar/', null=True, blank=True)
@@ -370,7 +365,6 @@ class Seminar(models.Model):
 # ---------------------------------------------------------------------------
 
 class Course(models.Model):
-    id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=500)
     description = models.TextField()
     image = models.ImageField(upload_to='site/images/course/', null=True, blank=True)
@@ -398,7 +392,6 @@ class Course(models.Model):
 # ---------------------------------------------------------------------------
 
 class Training(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     title = models.CharField(max_length=500)
     description = models.TextField()
     image = models.ImageField(upload_to='site/images/trainings/', null=True, blank=True)
@@ -425,7 +418,6 @@ class Training(models.Model):
 # ---------------------------------------------------------------------------
 
 class News(models.Model):
-    id = models.AutoField(primary_key=True)
     title = models.CharField(max_length=500)
     excerpt = models.TextField()
     body = models.TextField()
@@ -449,7 +441,7 @@ class News(models.Model):
 # ---------------------------------------------------------------------------
 
 class Report(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500)
     description = models.TextField(null=True, blank=True)
     year_published = models.IntegerField(null=True, blank=True)
@@ -476,7 +468,6 @@ class Report(models.Model):
 
 
 class Download(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     user_id = models.CharField(max_length=255, null=True, blank=True)
     user_email = models.EmailField(null=True, blank=True)
     report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="downloads")
@@ -495,7 +486,7 @@ class Download(models.Model):
 # ---------------------------------------------------------------------------
 
 class DataCatalogue(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=500, db_index=True)
     description = models.TextField(null=True, blank=True)
     category = models.CharField(max_length=255, null=True, blank=True, db_index=True)
@@ -528,7 +519,6 @@ class DataCatalogue(models.Model):
 
 
 class DataCatalogueView(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     item = models.ForeignKey(DataCatalogue, on_delete=models.CASCADE, related_name="views", db_index=True)
     ip_address = models.GenericIPAddressField(db_index=True)
     user_agent = models.TextField(null=True, blank=True)
@@ -548,7 +538,6 @@ class DataCatalogueView(models.Model):
 
 
 class PolicyBrief(models.Model):
-    id = models.CharField(max_length=255, primary_key=True)
     title = models.CharField(max_length=500)
     subtitle = models.CharField(max_length=500, null=True, blank=True)
     summary = models.TextField()
@@ -574,12 +563,9 @@ class PolicyBrief(models.Model):
         return self.title
 
 
-# ---------------------------------------------------------------------------
-# Subscription
-# ---------------------------------------------------------------------------
 
 class Subscription(models.Model):
-    id         = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email      = models.EmailField(unique=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
@@ -597,7 +583,7 @@ class Subscription(models.Model):
 # ---------------------------------------------------------------------------
 
 class ContactForm(models.Model):
-    id         = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     full_name  = models.CharField(max_length=255, db_column="fullName")
     email      = models.EmailField()
     subject    = models.CharField(max_length=500)
@@ -619,7 +605,7 @@ class ContactForm(models.Model):
 # ---------------------------------------------------------------------------
 
 class RateLimit(models.Model):
-    id           = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ip_address   = models.GenericIPAddressField()
     endpoint     = models.CharField(max_length=500)
     attempts     = models.IntegerField(default=1)
@@ -640,7 +626,7 @@ class RateLimit(models.Model):
 # ---------------------------------------------------------------------------
 
 class BlockedIP(models.Model):
-    id         = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
     reason     = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -655,7 +641,7 @@ class BlockedIP(models.Model):
 # ---------------------------------------------------------------------------
 
 class AuditLog(models.Model):
-    id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     user_email = models.EmailField(null=True, blank=True)
     action = models.CharField(max_length=255, db_index=True)
@@ -693,7 +679,7 @@ class AuditLog(models.Model):
 # ---------------------------------------------------------------------------
 
 class SystemLog(models.Model):
-    id = models.AutoField(primary_key=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     level = models.CharField(max_length=20, db_index=True)
     message = models.TextField()
     component = models.CharField(max_length=255, db_index=True)

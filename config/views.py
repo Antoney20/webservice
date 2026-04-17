@@ -12,7 +12,7 @@ from .models import (
     AuditLog, SystemLog,
 )
 from .serializers import (
-    UserSerializer, ContentSerializer, ContentSectionSerializer,
+    ContentListSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -60,26 +60,31 @@ class UserViewSet(viewsets.ModelViewSet):
         return ok_created()
 
 
-
 class ContentViewSet(viewsets.ModelViewSet):
-    queryset = Content.objects.select_related("author").all()
-    serializer_class = ContentSerializer
+    queryset = Content.objects.all()
     permission_classes = [EditorWrite]
     filterset_fields = ["type", "status", "featured", "category"]
     search_fields = ["title", "excerpt"]
     ordering_fields = ["date", "published_at", "created_at"]
     ordering = ["-created_at"]
 
+    def get_serializer_class(self):
+        # list() → lightweight, no sections
+        # retrieve() / create() / update() → full, with nested sections
+        if self.action == "list":
+            return ContentListSerializer
+        return ContentSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Prefetch sections only when we'll actually return them
+        if self.action != "list":
+            qs = qs.prefetch_related("sections")
+        return qs
+
     def perform_create(self, serializer):
-        raci_user = getattr(self.request, "raci_user", None)
-        if raci_user and raci_user.is_authenticated:
-            try:
-                author = User.objects.get(id=raci_user.user_id)
-                serializer.save(author=author)
-                return
-            except User.DoesNotExist:
-                pass
-        serializer.save()
+
+        serializer.save(created_by=self.request.user)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -90,7 +95,6 @@ class ContentViewSet(viewsets.ModelViewSet):
         except IntegrityError:
             return fail(message="Failed to create content.")
         return ok_created()
-
 
 class ContentSectionViewSet(viewsets.ModelViewSet):
     queryset = ContentSection.objects.select_related("content").all()
