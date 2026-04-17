@@ -8,14 +8,14 @@ from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicR
 from django.db.models import Count, Sum
 
 from .models import (
-    User, Content, ContentSection, TeamMember, Fellowship,
+    TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
     AuditLog, SystemLog,
 )
 from .serializers import (
-    ContentListSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    ContentListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -417,30 +417,213 @@ class CourseViewSet(viewsets.ModelViewSet):
         return ok_created()
 
 
+
+
 class TrainingViewSet(viewsets.ModelViewSet):
-    queryset = Training.objects.all()
-    serializer_class = TrainingSerializer
+    queryset           = Training.objects.select_related("created_by").prefetch_related("sections", "media").order_by("-created_at")
     permission_classes = [EditorWrite]
-    filterset_fields = ["upcoming", "category"]
-    search_fields = ["title", "description", "location"]
-    ordering_fields = ["date", "created_at"]
-    ordering = ["-created_at"]
+    filterset_fields   = ["upcoming", "category", "featured", "mode"]
+    search_fields      = ["title", "description", "location", "category"]
+    ordering_fields    = ["date", "created_at", "title"]
+    ordering           = ["-created_at"]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return TrainingListSerializer
+        return TrainingSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        if self.action == "list":
+            return qs.prefetch_related(None)   
+        return qs
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
 
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Training.objects.prefetch_related("sections", "media").get(pk=uuid.UUID(pk))
+        except (ValueError, Training.DoesNotExist):
+            try:
+                obj = Training.objects.prefetch_related("sections", "media").get(pk=int(pk))
+            except (ValueError, Training.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            instance = serializer.save(created_by=request.user)
+            self._sync_sections(instance, request.data.get("sections"))
+            self._sync_media(instance, request)
         except IntegrityError:
             return fail(message="Failed to create training.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            instance = serializer.save()
+            self._sync_sections(instance, request.data.get("sections"))
+            self._sync_media(instance, request)
+        except IntegrityError:
+            return fail(message="Failed to update training.")
+        return ok(data=self.get_serializer(instance).data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Clean up media files
+        for m in instance.media.all():
+            if m.file:
+                m.file.delete(save=False)
+        for s in instance.sections.all():
+            if s.image:
+                s.image.delete(save=False)
+        instance.delete()
+        return ok(message="Training deleted.")
+
+    def _sync_sections(self, instance, sections_json):
+        """Replace sections from JSON payload."""
+        if sections_json is None:
+            return
+        import json as _json
+        try:
+            sections = _json.loads(sections_json) if isinstance(sections_json, str) else sections_json
+        except (ValueError, TypeError):
+            return
+        instance.sections.all().delete()
+        for i, s in enumerate(sections):
+            TrainingSection.objects.create(
+                training  = instance,
+                title     = s.get("title") or None,
+                body      = s.get("body", ""),
+                order     = s.get("order", i),
+                image_alt = s.get("image_alt") or None,
+            )
+
+    def _sync_media(self, instance, request):
+        """Handle media_<n>_file uploads and media_<n>_url entries from FormData."""
+        import json as _json
+        media_meta_raw = request.data.get("media_meta")
+        if not media_meta_raw:
+            return
+        try:
+            meta_list = _json.loads(media_meta_raw) if isinstance(media_meta_raw, str) else media_meta_raw
+        except (ValueError, TypeError):
+            return
+
+        instance.media.all().delete()
+        for i, meta in enumerate(meta_list):
+            file_key = f"media_{i}_file"
+            file_obj = request.FILES.get(file_key)
+            TrainingMedia.objects.create(
+                training   = instance,
+                media_type = meta.get("media_type", "DOCUMENT"),
+                title      = meta.get("title") or None,
+                file       = file_obj,
+                url        = meta.get("url") or None,
+                order      = i,
+            )
+
+
+class TrainingSectionViewSet(viewsets.ModelViewSet):
+    queryset           = TrainingSection.objects.select_related("training").all()
+    serializer_class   = TrainingSectionSerializer
+    permission_classes = [EditorWrite]
+    filterset_fields   = ["training"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(qs, many=True)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        serializer.save()
+        return ok_created()
+
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        serializer.save()
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.image:
+            instance.image.delete(save=False)
+        instance.delete()
+        return ok(message="Section deleted.")
+
+
+class TrainingMediaViewSet(viewsets.ModelViewSet):
+    queryset           = TrainingMedia.objects.select_related("training").all()
+    serializer_class   = TrainingMediaSerializer
+    permission_classes = [EditorWrite]
+    filterset_fields   = ["training", "media_type"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        serializer = self.get_serializer(qs, many=True)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        serializer.save()
+        return ok_created()
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.file:
+            instance.file.delete(save=False)
+        instance.delete()
+        return ok(message="Media deleted.")
 
 # ---------------------------------------------------------------------------
 # News
@@ -582,9 +765,6 @@ class DownloadViewSet(viewsets.ModelViewSet):
         return ok(data=serializer.data)
 
 
-# ---------------------------------------------------------------------------
-# Data Catalogue
-# ---------------------------------------------------------------------------
 class DataCatalogueViewSet(viewsets.ModelViewSet):
     queryset           = DataCatalogue.objects.annotate(
                              view_count=Count("views")

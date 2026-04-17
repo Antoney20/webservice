@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from core.validators.email import validate_email_address
 from core.validators.file import validate_file
 from .models import (
-    User, Content, ContentSection, TeamMember, Fellowship,
+    TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
@@ -223,10 +223,66 @@ class CourseSerializer(serializers.ModelSerializer):
         fields = "__all__"
 
 
-class TrainingSerializer(serializers.ModelSerializer):
+
+
+class TrainingSectionSerializer(serializers.ModelSerializer):
+    id    = serializers.UUIDField(read_only=True)
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+
     class Meta:
-        model = Training
-        fields = "__all__"
+        model            = TrainingSection
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+
+class TrainingMediaSerializer(serializers.ModelSerializer):
+    id   = serializers.UUIDField(read_only=True)
+    file = serializers.FileField(required=False, allow_null=True, use_url=True)
+
+    class Meta:
+        model            = TrainingMedia
+        fields           = "__all__"
+        read_only_fields = ["created_at"]
+
+    def validate_file(self, value):
+        if not value:
+            return None
+        validate_file(value, self.context.get("request"))
+        return value
+
+
+class TrainingSerializer(serializers.ModelSerializer):
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+    sections   = TrainingSectionSerializer(many=True, read_only=True)
+    media      = TrainingMediaSerializer(many=True, read_only=True)
+
+    class Meta:
+        model            = Training
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_tags(self, value):
+        return _parse_json_list(value)
+
+
+class TrainingListSerializer(serializers.ModelSerializer):
+    """Lightweight — no sections or media."""
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+
+    class Meta:
+        model            = Training
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_tags(self, value):
+        return _parse_json_list(value)
 
 
 class NewsSerializer(serializers.ModelSerializer):

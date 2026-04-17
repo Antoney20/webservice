@@ -391,30 +391,89 @@ class Course(models.Model):
 
 # ---------------------------------------------------------------------------
 # Training
-# ---------------------------------------------------------------------------
+# --------------------------------------------------------------------------
 
 class Training(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    title = models.CharField(max_length=500)
-    description = models.TextField()
-    image = models.ImageField(upload_to='site/images/trainings/', null=True, blank=True)
-    date = models.CharField(max_length=100)
-    upcoming = models.BooleanField(default=False)
-    category = models.CharField(max_length=255)
+    id                   = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title                = models.CharField(max_length=500)
+    description          = models.TextField()
+    detailed_description = models.TextField(null=True, blank=True)
+    date                 = models.CharField(max_length=100)
+    date_range           = models.CharField(max_length=100, null=True, blank=True)
+    duration             = models.CharField(max_length=100, null=True, blank=True)
+    upcoming             = models.BooleanField(default=False, db_index=True)
+    category             = models.CharField(max_length=255, db_index=True)
     application_deadline = models.CharField(max_length=100, null=True, blank=True)
-    location = models.CharField(max_length=255)
-    link = models.URLField(null=True, blank=True)
-    
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
-    updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
+    location             = models.CharField(max_length=255)
+    mode                 = models.CharField(max_length=50, null=True, blank=True)  # Online / In-Person / Hybrid
+    cost                 = models.CharField(max_length=100, null=True, blank=True)
+    max_participants     = models.IntegerField(null=True, blank=True)
+    target_audience      = models.TextField(null=True, blank=True)
+    prerequisites        = models.TextField(null=True, blank=True)
+    tags                 = models.JSONField(default=list, blank=True)
+    link                 = models.URLField(null=True, blank=True)
+    external_website     = models.URLField(null=True, blank=True)
+    featured             = models.BooleanField(default=False, db_index=True)
+
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True, db_column="createdAt")
+    updated_at  = models.DateTimeField(auto_now=True,     db_column="updatedAt")
 
     class Meta:
         db_table = "trainings"
+        indexes  = [
+            models.Index(fields=["upcoming"]),
+            models.Index(fields=["category"]),
+            models.Index(fields=["featured"]),
+        ]
 
     def __str__(self):
         return self.title
 
+
+class TrainingSection(models.Model):
+    """Rich content sections — each can have a title, body, image."""
+    id        = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    training  = models.ForeignKey(Training, on_delete=models.CASCADE, related_name="sections", db_index=True)
+    title     = models.CharField(max_length=255, null=True, blank=True)
+    body      = models.TextField()
+    order     = models.IntegerField(default=0)
+    image     = models.ImageField(upload_to='site/images/trainings/sections/', null=True, blank=True)
+    image_alt = models.CharField(max_length=255, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "training_sections"
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"{self.training.title} — section {self.order}"
+
+
+class TrainingMedia(models.Model):
+    """Images, PDFs, or video links attached to a training."""
+    MEDIA_TYPES = [
+        ("IMAGE",    "Image"),
+        ("PDF",      "PDF Document"),
+        ("VIDEO",    "Video Link"),
+        ("DOCUMENT", "Document"),
+    ]
+    id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    training     = models.ForeignKey(Training, on_delete=models.CASCADE, related_name="media", db_index=True)
+    media_type   = models.CharField(max_length=20, choices=MEDIA_TYPES, db_index=True)
+    title        = models.CharField(max_length=255, null=True, blank=True)
+    file         = models.FileField(upload_to='site/trainings/media/', null=True, blank=True)
+    url          = models.URLField(null=True, blank=True)   # for VIDEO links or external docs
+    order        = models.IntegerField(default=0)
+    created_at   = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "training_media"
+        ordering = ["order"]
+
+    def __str__(self):
+        return f"{self.training.title} — {self.media_type}"
 
 # ---------------------------------------------------------------------------
 # News
