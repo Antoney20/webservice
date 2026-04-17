@@ -287,15 +287,35 @@ def _parse_json_list(value):
     return []
 
 class DataCatalogueSerializer(serializers.ModelSerializer):
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+    image      = serializers.ImageField(required=False, allow_null=True, use_url=True)
+    view_count = serializers.SerializerMethodField()
+
     class Meta:
-        model = DataCatalogue
-        fields = "__all__"
+        model            = DataCatalogue
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by", "downloads"]
+
+    def get_view_count(self, obj):
+        return getattr(obj, "view_count", 0)
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+    def validate_tags(self, value):
+        return _parse_json_list(value)
 
 
 class DataCatalogueViewSerializer(serializers.ModelSerializer):
+    id = serializers.UUIDField(read_only=True)
+
     class Meta:
-        model = DataCatalogueView
-        fields = "__all__"
+        model            = DataCatalogueView
+        fields           = "__all__"
+        read_only_fields = ["created_at"]
 
 
 class PolicyBriefSerializer(serializers.ModelSerializer):

@@ -4,7 +4,7 @@ from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
-from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, RequiresAdmin
+from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
 from .models import (
@@ -532,7 +532,6 @@ class ReportViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
 
-        # Remove old file if a new one is being uploaded
         new_file = request.data.get("file")
         if new_file and instance.file:
             instance.file.delete(save=False)
@@ -547,7 +546,6 @@ class ReportViewSet(viewsets.ModelViewSet):
         instance.delete()
         return ok(message="Report deleted.")
 
-    # ── business logic ─────────────────────────────────────────────────────
 
     def _save_with_file_meta(self, serializer, **kwargs):
         """Extract file metadata and persist alongside the report."""
@@ -555,7 +553,6 @@ class ReportViewSet(viewsets.ModelViewSet):
         if file:
             kwargs["file_size"] = file.size
             kwargs["file_type"] = getattr(file, "content_type", None)
-            # Auto-set file_name from upload if not provided
             if not serializer.validated_data.get("file_name"):
                 kwargs["file_name"] = file.name
         serializer.save(**kwargs)
@@ -588,48 +585,124 @@ class DownloadViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 # Data Catalogue
 # ---------------------------------------------------------------------------
-
 class DataCatalogueViewSet(viewsets.ModelViewSet):
-    queryset = DataCatalogue.objects.all()
-    serializer_class = DataCatalogueSerializer
+    queryset           = DataCatalogue.objects.annotate(
+                             view_count=Count("views")
+                         ).order_by("-created_at")
+    serializer_class   = DataCatalogueSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["category", "is_public", "is_featured", "year"]
-    search_fields = ["title", "description"]
-    ordering_fields = ["year", "downloads", "created_at"]
-    ordering = ["-created_at"]
+    filterset_fields   = ["category", "is_public", "is_featured", "year"]
+    search_fields      = ["title", "description", "tags"]
+    ordering_fields    = ["year", "downloads", "created_at", "view_count"]
+    ordering           = ["-created_at"]
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
 
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = DataCatalogue.objects.annotate(
+                view_count=Count("views")
+            ).get(pk=uuid.UUID(pk))
+        except (ValueError, DataCatalogue.DoesNotExist):
+            try:
+                obj = DataCatalogue.objects.annotate(
+                    view_count=Count("views")
+                ).get(pk=int(pk))
+            except (ValueError, DataCatalogue.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save(created_by=request.user)
         except IntegrityError:
             return fail(message="Failed to create data catalogue entry.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            serializer.save()
+        except IntegrityError:
+            return fail(message="Failed to update data catalogue entry.")
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.image:
+            instance.image.delete(save=False)
+        instance.delete()
+        return ok(message="Catalogue entry deleted.")
+
 
 class DataCatalogueViewViewSet(viewsets.ModelViewSet):
-    queryset = DataCatalogueView.objects.select_related("item").all()
-    serializer_class = DataCatalogueViewSerializer
-    permission_classes = [IsAuthenticated]
-    filterset_fields = ["item"]
-    ordering = ["-created_at"]
+    queryset           = DataCatalogueView.objects.select_related("item").order_by("-created_at")
+    serializer_class   = DataCatalogueViewSerializer
+    permission_classes = [PublicReadOnly]
+
+    filterset_fields   = ["item"]
+    ordering           = ["-created_at"]
+
+    def get_permissions(self):
+        if self.action == "create":
+            return []          # anyone can POST a view
+        if self.action in ("list", "retrieve"):
+            return []
+        return [RequiresAdmin()]
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
+            # unique_together violation means already viewed — treat as success
+            if "non_field_errors" in serializer.errors:
+                return ok(message="View already recorded.")
             return fail(errors=serializer.errors)
+        ip = get_client_ip(request)
         try:
-            self.perform_create(serializer)
+            serializer.save(ip_address=ip)
         except IntegrityError:
-            return fail(message="Failed to record catalogue view.")
+            return ok(message="View already recorded.")
         return ok_created()
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return ok(message="View record deleted.")
+
 
 
 # ---------------------------------------------------------------------------
