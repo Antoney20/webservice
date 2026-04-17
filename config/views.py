@@ -221,18 +221,34 @@ class InternshipViewSet(viewsets.ModelViewSet):
 
 
 class PublicationViewSet(viewsets.ModelViewSet):
-    queryset = Publication.objects.all()
+    queryset         = Publication.objects.select_related("created_by").all()
     serializer_class = PublicationSerializer
     permission_classes = [EditorWrite]
     filterset_fields = ["publication_type", "publication_year", "category"]
-    search_fields = ["title", "abstract", "journal"]
-    ordering_fields = ["publication_year", "date_published", "created_at"]
-    ordering = ["-publication_year"]
+    search_fields    = ["title", "abstract", "journal"]
+    ordering_fields  = ["publication_year", "date_published", "created_at"]
+    ordering         = ["-publication_year"]
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Publication.objects.get(pk=uuid.UUID(pk))
+        except (ValueError, Publication.DoesNotExist):
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -244,6 +260,17 @@ class PublicationViewSet(viewsets.ModelViewSet):
             return fail(message="Failed to create publication.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_update(serializer)
+        except IntegrityError:
+            return fail(message="Failed to update publication.")
+        return ok(data=serializer.data)
 
 
 class SeminarViewSet(viewsets.ModelViewSet):

@@ -132,3 +132,5 @@ dmypy.json
 # Docker
 docker-compose.override.yml
 *.log
+
+commit-ai.sh
