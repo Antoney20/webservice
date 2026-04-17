@@ -230,10 +230,22 @@ class PublicationSerializer(serializers.ModelSerializer):
         return self.validate_authors(value)
 
 class SeminarSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Seminar
-        fields = "__all__"
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+    image      = serializers.ImageField(required=False, allow_null=True, use_url=True)
 
+    class Meta:
+        model            = Seminar
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+    def validate_tags(self, value):
+        return _parse_json_list(value)
 
 class CourseSerializer(serializers.ModelSerializer):
     class Meta:
