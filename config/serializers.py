@@ -165,9 +165,27 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
 
 class FellowshipSerializer(serializers.ModelSerializer):
+    id          = serializers.UUIDField(read_only=True)
+    created_by  = UserSerializer(read_only=True)
+    team_member = TeamMemberSerializer(read_only=True)
+    team_member_id = serializers.PrimaryKeyRelatedField(
+        queryset=TeamMember.objects.all(),
+        source="team_member",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+
     class Meta:
-        model = Fellowship
-        fields = "__all__"
+        model            = Fellowship
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
 
 
 class InternshipSerializer(serializers.ModelSerializer):

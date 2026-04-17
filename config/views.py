@@ -263,30 +263,77 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance)
         return ok(data=serializer.data)
 
+
 class FellowshipViewSet(viewsets.ModelViewSet):
-    queryset = Fellowship.objects.select_related("team_member").all()
-    serializer_class = FellowshipSerializer
+    queryset           = Fellowship.objects.select_related("team_member", "created_by").all()
+    serializer_class   = FellowshipSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["type", "status", "year", "institution"]
-    search_fields = ["name", "topic"]
-    ordering_fields = ["year", "created_at"]
-    ordering = ["-year"]
+    filterset_fields   = ["type", "status", "year", "institution"]
+    search_fields      = ["name", "topic", "institution", "mentor"]
+    ordering_fields    = ["year", "created_at", "name"]
+    ordering           = ["-year"]
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
 
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Fellowship.objects.select_related("team_member", "created_by").get(pk=uuid.UUID(pk))
+        except (ValueError, Fellowship.DoesNotExist):
+            try:
+                obj = Fellowship.objects.select_related("team_member", "created_by").get(pk=int(pk))
+            except (ValueError, Fellowship.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save(created_by=request.user)
         except IntegrityError:
             return fail(message="Failed to create fellowship.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            # Remove old image if a new one is being uploaded
+            new_image = request.FILES.get("image")
+            if new_image and instance.image:
+                instance.image.delete(save=False)
+            serializer.save()
+        except IntegrityError:
+            return fail(message="Failed to update fellowship.")
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.image:
+            instance.image.delete(save=False)
+        instance.delete()
+        return ok(message="Fellowship deleted.")
 
 class InternshipViewSet(viewsets.ModelViewSet):
     queryset = Internship.objects.all()
