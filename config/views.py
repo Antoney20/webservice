@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework import status
 from django.db import IntegrityError
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, RequiresAdmin
+from django.db.models import Count, Sum
 
 from .models import (
     User, Content, ContentSection, TeamMember, Fellowship,
@@ -167,7 +168,6 @@ class ContentViewSet(viewsets.ModelViewSet):
 
 
 
-
 # from config.models import Content
 class ContentSectionViewSet(viewsets.ModelViewSet):
     queryset = ContentSection.objects.select_related("content").all()
@@ -185,7 +185,6 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
         except IntegrityError:
             return fail(message="Failed to create content section.")
         return ok_created()
-
 
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
@@ -475,48 +474,115 @@ class NewsViewSet(viewsets.ModelViewSet):
 # ---------------------------------------------------------------------------
 # Reports & Downloads
 # ---------------------------------------------------------------------------
-
 class ReportViewSet(viewsets.ModelViewSet):
-    queryset = Report.objects.all()
-    serializer_class = ReportSerializer
+    queryset           = Report.objects.select_related("created_by").annotate(
+                             download_count=Count("downloads")
+                         ).order_by("-created_at")
+    serializer_class   = ReportSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["type", "is_public", "year_published"]
-    search_fields = ["title", "description"]
-    ordering_fields = ["year_published", "date_published", "created_at"]
-    ordering = ["-created_at"]
+    filterset_fields   = ["type", "is_public", "year_published"]
+    search_fields      = ["title", "description", "tags", "keywords"]
+    ordering_fields    = ["title", "year_published", "created_at", "download_count"]
+    ordering           = ["-created_at"]
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
 
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Report.objects.annotate(
+                download_count=Count("downloads")
+            ).get(pk=uuid.UUID(pk))
+        except (ValueError, Report.DoesNotExist):
+            try:
+                obj = Report.objects.annotate(
+                    download_count=Count("downloads")
+                ).get(pk=int(pk))
+            except (ValueError, Report.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-        try:
-            self.perform_create(serializer)
-        except IntegrityError:
-            return fail(message="Failed to create report.")
+        self._save_with_file_meta(serializer, created_by=request.user)
         return ok_created()
+
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+
+        # Remove old file if a new one is being uploaded
+        new_file = request.data.get("file")
+        if new_file and instance.file:
+            instance.file.delete(save=False)
+
+        self._save_with_file_meta(serializer)
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.file:
+            instance.file.delete(save=False)
+        instance.delete()
+        return ok(message="Report deleted.")
+
+    # ── business logic ─────────────────────────────────────────────────────
+
+    def _save_with_file_meta(self, serializer, **kwargs):
+        """Extract file metadata and persist alongside the report."""
+        file = serializer.validated_data.get("file")
+        if file:
+            kwargs["file_size"] = file.size
+            kwargs["file_type"] = getattr(file, "content_type", None)
+            # Auto-set file_name from upload if not provided
+            if not serializer.validated_data.get("file_name"):
+                kwargs["file_name"] = file.name
+        serializer.save(**kwargs)
 
 
 class DownloadViewSet(viewsets.ModelViewSet):
-    queryset = Download.objects.select_related("report").all()
-    serializer_class = DownloadSerializer
-    permission_classes = [IsAuthenticated]
-    filterset_fields = ["report"]
-    ordering = ["-created_at"]
+    queryset           = Download.objects.select_related("report").order_by("-created_at")
+    serializer_class   = DownloadSerializer
+    permission_classes = [AnonPostOnly]
+    filterset_fields   = ["report"]
+    ordering           = ["-created_at"]
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-        try:
-            self.perform_create(serializer)
-        except IntegrityError:
-            return fail(message="Failed to record download.")
+        ip = get_client_ip(request)
+        serializer.save(user_id=str(request.user.pk) if request.user.is_authenticated else None)
         return ok_created()
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
 
 
 # ---------------------------------------------------------------------------

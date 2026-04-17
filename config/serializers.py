@@ -5,6 +5,7 @@ from django.db import IntegrityError
 from rest_framework.response import Response
 
 from core.validators.email import validate_email_address
+from core.validators.file import validate_file
 from .models import (
     User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
@@ -235,16 +236,55 @@ class NewsSerializer(serializers.ModelSerializer):
 
 
 class ReportSerializer(serializers.ModelSerializer):
+    id             = serializers.UUIDField(read_only=True)
+    created_by     = UserSerializer(read_only=True)
+    file           = serializers.FileField(required=False, allow_null=True, use_url=True)
+    download_count = serializers.SerializerMethodField()
+
     class Meta:
-        model = Report
-        fields = "__all__"
+        model            = Report
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by", "file_size", "file_type"]
+
+    def get_download_count(self, obj):
+        return getattr(obj, "download_count", obj.downloads.count())
+
+    def validate_file(self, value):
+        if not value:
+            return None
+      
+        validate_file(value, self.context.get("request"))
+        return value
+
+    def validate_tags(self, value):
+        return _parse_json_list(value)
+
+    def validate_keywords(self, value):
+        return _parse_json_list(value)
 
 
 class DownloadSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Download
-        fields = "__all__"
+    id = serializers.UUIDField(read_only=True)
 
+    class Meta:
+        model            = Download
+        fields           = "__all__"
+        read_only_fields = ["created_at"]
+
+
+
+def _parse_json_list(value):
+    if isinstance(value, list):
+        return value
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+            if isinstance(parsed, list):
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            pass
+        return [v.strip() for v in value.split(",") if v.strip()]
+    return []
 
 class DataCatalogueSerializer(serializers.ModelSerializer):
     class Meta:
