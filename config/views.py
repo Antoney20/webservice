@@ -45,23 +45,69 @@ def fail(errors=None, message=None, status_code=status.HTTP_400_BAD_REQUEST):
 
 
 class UserViewSet(viewsets.ModelViewSet):
-    queryset = User.objects.all()
-    serializer_class = UserSerializer
+    queryset           = User.objects.all().order_by("-created_at")
+    serializer_class   = UserSerializer
     permission_classes = [RequiresAdmin]
-    search_fields = ["name", "email"]
-    ordering = ["-created_at"]
+    filterset_fields   = ["role", "is_active", "is_staff"]
+    search_fields      = ["name", "email"]
+    ordering_fields    = ["name", "email", "created_at", "role"]
+    ordering           = ["-created_at"]
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = User.objects.get(pk=uuid.UUID(pk))
+        except (ValueError, User.DoesNotExist):
+            try:
+                obj = User.objects.get(pk=int(pk))
+            except (ValueError, User.DoesNotExist):
+                from rest_framework.exceptions import NotFound
+                raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save()
         except IntegrityError:
-            return fail(message="User already exists.")
+            return fail(message="User with this email already exists.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            serializer.save()
+        except IntegrityError:
+            return fail(message="Email already in use.")
+        return ok(data=serializer.data)
 
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        # Prevent deleting yourself
+        if instance.pk == request.user.pk:
+            return fail(message="You cannot delete your own account.")
+        instance.delete()
+        return ok(message="User deleted.")
 
 
 class ContentViewSet(viewsets.ModelViewSet):

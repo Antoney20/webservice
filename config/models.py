@@ -49,6 +49,7 @@ class UserManager(BaseUserManager):
         user.save(using=self._db)
         return user
 
+
     def create_user(self, email, password=None, **extra):
         extra.setdefault("role", UserRole.USER)
         extra.setdefault("is_staff", False)

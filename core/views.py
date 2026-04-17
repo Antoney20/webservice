@@ -7,6 +7,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from django.utils import timezone
 
 from core.permissions import IsAuthenticated
 
@@ -68,6 +69,8 @@ def login(request):
 
     tokens = _token_pair(user)
     logger.info("Login successful: %s", email)
+    user.last_login = timezone.now()
+    user.save(update_fields=["last_login"])
 
     return Response(
         {
