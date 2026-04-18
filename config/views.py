@@ -7,6 +7,7 @@ from rest_framework import status
 from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
 from core.caches.content import  get_content_list, set_content_list, invalidate_content_list, get_content_item, set_content_item, invalidate_content_item, invalidate_content
+from core.caches.seminars import get_seminar_item, set_seminar_item, get_seminar_list, invalidate_seminar, set_seminar_list
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
@@ -562,6 +563,9 @@ class PublicationViewSet(viewsets.ModelViewSet):
         instance.delete()
         return ok()
 
+
+
+
 class SeminarViewSet(viewsets.ModelViewSet):
     queryset           = Seminar.objects.order_by("-created_at")
     serializer_class   = SeminarSerializer
@@ -579,23 +583,32 @@ class SeminarViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Seminar.objects.get(pk=uuid.UUID(pk))
-        except (ValueError, Seminar.DoesNotExist):
-            from rest_framework.exceptions import NotFound
+            obj = Seminar.objects.get(pk=pk)
+        except Seminar.DoesNotExist:
             raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
     def list(self, request, *args, **kwargs):
+        cached = get_seminar_list()
+        if cached is not None:
+            return ok(data=cached)
         qs         = self.filter_queryset(self.get_queryset())
         page       = self.paginate_queryset(qs)
         serializer = self.get_serializer(page if page is not None else qs, many=True)
-        if page is not None:
-            return ok(data=self.get_paginated_response(serializer.data).data)
-        return ok(data=serializer.data)
+        data       = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_seminar_list(data)
+        return ok(data=data)
 
     def retrieve(self, request, *args, **kwargs):
-        return ok(data=self.get_serializer(self.get_object()).data)
+        pk     = self.kwargs.get("pk")
+        cached = get_seminar_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        set_seminar_item(pk, serializer.data)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -603,13 +616,14 @@ class SeminarViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             serializer.save(created_by=request.user)
+            invalidate_seminar()
         except IntegrityError:
             return fail(message="Failed to create seminar.")
         return ok_created()
 
     def update(self, request, *args, **kwargs):
-        partial  = kwargs.pop("partial", False)
-        instance = self.get_object()
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
@@ -617,16 +631,20 @@ class SeminarViewSet(viewsets.ModelViewSet):
             if request.FILES.get("image") and instance.image:
                 instance.image.delete(save=False)
             serializer.save()
+            invalidate_seminar(pk=str(instance.pk))
         except IntegrityError:
             return fail(message="Failed to update seminar.")
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        pk       = instance.pk
         if instance.image:
             instance.image.delete(save=False)
         instance.delete()
-        return ok(message="Seminar deleted.")
+        invalidate_seminar(pk=str(pk))
+        return ok()
+
 class CourseViewSet(viewsets.ModelViewSet):
     queryset = Course.objects.all()
     serializer_class = CourseSerializer
@@ -1010,17 +1028,9 @@ class DataCatalogueViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = DataCatalogue.objects.annotate(
-                view_count=Count("views")
-            ).get(pk=uuid.UUID(pk))
-        except (ValueError, DataCatalogue.DoesNotExist):
-            try:
-                obj = DataCatalogue.objects.annotate(
-                    view_count=Count("views")
-                ).get(pk=int(pk))
-            except (ValueError, DataCatalogue.DoesNotExist):
-                from rest_framework.exceptions import NotFound
-                raise NotFound()
+            obj = DataCatalogue.objects.annotate(view_count=Count("views")).get(pk=pk)
+        except DataCatalogue.DoesNotExist:
+            raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -1033,7 +1043,16 @@ class DataCatalogueViewSet(viewsets.ModelViewSet):
         return ok(data=serializer.data)
 
     def retrieve(self, request, *args, **kwargs):
-        return ok(data=self.get_serializer(self.get_object()).data)
+        instance = self.get_object()
+        # Auto-record view on retrieve
+        ip = get_client_ip(request)
+        if ip:
+            DataCatalogueView.objects.get_or_create(
+                item=instance,
+                ip_address=ip,
+                defaults={"user_agent": request.META.get("HTTP_USER_AGENT", "")},
+            )
+        return ok(data=self.get_serializer(instance).data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -1062,21 +1081,18 @@ class DataCatalogueViewSet(viewsets.ModelViewSet):
         if instance.image:
             instance.image.delete(save=False)
         instance.delete()
-        return ok(message="Catalogue entry deleted.")
+        return ok()
 
 
 class DataCatalogueViewViewSet(viewsets.ModelViewSet):
     queryset           = DataCatalogueView.objects.select_related("item").order_by("-created_at")
     serializer_class   = DataCatalogueViewSerializer
     permission_classes = [PublicReadOnly]
-
     filterset_fields   = ["item"]
     ordering           = ["-created_at"]
 
     def get_permissions(self):
-        if self.action == "create":
-            return []          # anyone can POST a view
-        if self.action in ("list", "retrieve"):
+        if self.action in ("create", "list", "retrieve"):
             return []
         return [RequiresAdmin()]
 
@@ -1094,22 +1110,19 @@ class DataCatalogueViewViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
-            # unique_together violation means already viewed — treat as success
             if "non_field_errors" in serializer.errors:
-                return ok(message="View already recorded.")
+                return ok()  # already viewed
             return fail(errors=serializer.errors)
         ip = get_client_ip(request)
         try:
             serializer.save(ip_address=ip)
         except IntegrityError:
-            return ok(message="View already recorded.")
+            return ok()  # already viewed
         return ok_created()
 
     def destroy(self, request, *args, **kwargs):
         self.get_object().delete()
-        return ok(message="View record deleted.")
-
-
+        return ok()
 
 # ---------------------------------------------------------------------------
 # Policy Briefs

@@ -394,28 +394,52 @@ def _parse_json_list(value):
         return [v.strip() for v in value.split(",") if v.strip()]
     return []
 
+
 class DataCatalogueSerializer(serializers.ModelSerializer):
-    id         = serializers.UUIDField(read_only=True)
+    id         = serializers.CharField(read_only=True)
     created_by = UserSerializer(read_only=True)
     image      = serializers.ImageField(required=False, allow_null=True, use_url=True)
-    view_count = serializers.SerializerMethodField()
+    view_count = serializers.IntegerField(read_only=True, default=0)
 
     class Meta:
         model            = DataCatalogue
         fields           = "__all__"
         read_only_fields = ["created_at", "updated_at", "created_by", "downloads"]
 
-    def get_view_count(self, obj):
-        return getattr(obj, "view_count", 0)
-
     def validate_image(self, value):
-        if not value:
-            return None
-        return value
+        return value or None
 
     def validate_tags(self, value):
-        return _parse_json_list(value)
+        if isinstance(value, list):
+            return value
 
+        if isinstance(value, str):
+            import json
+            try:
+                parsed = json.loads(value)
+                if isinstance(parsed, list):
+                    return parsed
+            except Exception:
+                pass
+
+            return [t.strip() for t in value.split(",") if t.strip()]
+
+        return []
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+
+        tags = data.get("tags")
+
+        if isinstance(tags, str):
+            import json
+            try:
+                parsed = json.loads(tags)
+                data["tags"] = parsed if isinstance(parsed, list) else []
+            except Exception:
+                data["tags"] = [t.strip() for t in tags.split(",") if t.strip()]
+
+        return data
 
 class DataCatalogueViewSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(read_only=True)
