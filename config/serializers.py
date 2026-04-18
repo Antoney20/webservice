@@ -114,7 +114,18 @@ class ContentSerializer(_ContentBase):
         pass
 
 
+class TeamMemberListSerializer(serializers.ModelSerializer):
+    id    = serializers.UUIDField(read_only=True)
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
 
+    class Meta:
+        model  = TeamMember
+        fields = [
+            "id", "name", "image",
+            "title", "role", "department",
+            "featured", "alumni", "is_active",
+            "is_fellow", "in_team", "status",
+        ]
 
 
 class TeamMemberSerializer(serializers.ModelSerializer):

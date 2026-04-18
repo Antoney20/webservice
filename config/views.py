@@ -13,7 +13,19 @@ from core.caches.internships import (
     get_internship_item, set_internship_item,
     invalidate_internship,
 )
+from core.caches.publications import (
+    get_publication_list, set_publication_list,
+    get_publication_item, set_publication_item,
+    invalidate_publication,
+)
+from core.caches.team import (
+    get_team_list, set_team_list,
+    get_team_item, set_team_item,
+    invalidate_team,
+)
 
+
+from core.middleware.tracking import get_client_ip
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
@@ -25,7 +37,7 @@ from .models import (
     AuditLog, SystemLog,
 )
 from .serializers import (
-    ContentListSerializer, PublicationListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    ContentListSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -294,6 +306,8 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
         return ok()
 
 
+
+
 class TeamMemberViewSet(viewsets.ModelViewSet):
     queryset           = TeamMember.objects.select_related("created_by").all()
     serializer_class   = TeamMemberSerializer
@@ -303,15 +317,23 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
     ordering_fields    = ["name", "created_at", "department"]
     ordering           = ["name"]
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return TeamMemberListSerializer
+        return TeamMemberSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            # Try integer first (existing rows seeded with int IDs)
-            obj = TeamMember.objects.get(pk=int(pk))
+            obj = TeamMember.objects.select_related("created_by").get(pk=int(pk))
         except (ValueError, TypeError):
-            # Fall back to UUID for new rows
             try:
-                obj = TeamMember.objects.get(pk=uuid.UUID(pk))
+                obj = TeamMember.objects.select_related("created_by").get(pk=uuid.UUID(pk))
             except (ValueError, TeamMember.DoesNotExist):
                 from rest_framework.exceptions import NotFound
                 raise NotFound()
@@ -321,21 +343,40 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
         self.check_object_permissions(self.request, obj)
         return obj
 
+    def list(self, request, *args, **kwargs):
+        cached = get_team_list()
+        if cached is not None:
+            return ok(data=cached)
 
-    def get_permissions(self):
-        if self.action in ("list", "retrieve"):
-            return []
-        return super().get_permissions()
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(
+            page if page is not None else qs,
+            many=True,
+            context={"request": request},
+        )
+        result = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_team_list(result)
+        return ok(data=result)
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+    def retrieve(self, request, *args, **kwargs):
+        pk     = self.kwargs.get("pk")
+        cached = get_team_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, context={"request": request})
+        set_team_item(pk, serializer.data)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save(created_by=request.user)
+            invalidate_team()
         except IntegrityError:
             return fail(message="Failed to create team member.")
         return ok_created()
@@ -347,30 +388,18 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_update(serializer)
+            serializer.save()
+            invalidate_team(pk=str(instance.pk))
         except IntegrityError:
             return fail(message="Failed to update team member.")
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        pk       = str(instance.pk)
         instance.delete()
+        invalidate_team(pk=pk)
         return ok(message="Team member deleted.")
-
-    def list(self, request, *args, **kwargs):
-        qs         = self.filter_queryset(self.get_queryset())
-        page       = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page if page is not None else qs, many=True)
-        if page is not None:
-            return ok(data=self.get_paginated_response(serializer.data).data)
-        return ok(data=serializer.data)
-
-    def retrieve(self, request, *args, **kwargs):
-        instance   = self.get_object()
-        serializer = self.get_serializer(instance)
-        return ok(data=serializer.data)
-
-
 class FellowshipViewSet(viewsets.ModelViewSet):
     queryset           = Fellowship.objects.select_related("team_member", "created_by").all()
     serializer_class   = FellowshipSerializer
@@ -526,71 +555,90 @@ class InternshipViewSet(viewsets.ModelViewSet):
         return ok(message="Internship deleted.")
     
 class PublicationViewSet(viewsets.ModelViewSet):
-    queryset         = Publication.objects.select_related("created_by").all()
-    serializer_class = PublicationSerializer
+    queryset           = Publication.objects.select_related("created_by").all()
+    serializer_class   = PublicationSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["publication_type", "publication_year", "category"]
-    search_fields    = ["title", "abstract", "journal"]
-    ordering_fields  = ["publication_year", "date_published", "created_at"]
-    ordering         = ["-publication_year"]
+    filterset_fields   = ["publication_type", "publication_year", "category"]
+    search_fields      = ["title", "abstract", "journal"]
+    ordering_fields    = ["publication_year", "date_published", "created_at"]
+    ordering           = ["-publication_year"]
 
+    def get_serializer_class(self):
+        if self.action == "list":
+            return PublicationListSerializer
+        return PublicationSerializer
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
 
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Publication.objects.get(pk=pk)
+            obj = Publication.objects.select_related("created_by").get(pk=pk)
         except Publication.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
+    def list(self, request, *args, **kwargs):
+        cached = get_publication_list()
+        if cached is not None:
+            return ok(data=cached)
 
-    def get_serializer_class(self):
-        if self.action == "list":
-            return PublicationListSerializer
-        return PublicationSerializer
-    
-    def get_permissions(self):
-        if self.action in ("list", "retrieve"):
-            return []
-        return super().get_permissions()
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(
+            page if page is not None else qs,
+            many=True,
+        )
+        result = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_publication_list(result)
+        return ok(data=result)
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+    def retrieve(self, request, *args, **kwargs):
+        pk     = self.kwargs.get("pk")
+        cached = get_publication_item(pk)
+        if cached is not None:
+            return ok(data=cached)
 
-    def perform_update(self, serializer):
-        serializer.save()
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        set_publication_item(pk, serializer.data)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save(created_by=request.user)
+            invalidate_publication()
         except IntegrityError:
             return fail(message="Failed to create publication.")
         return ok_created()
 
     def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        instance = self.get_object()
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_update(serializer)
+            serializer.save()
+            invalidate_publication(pk=str(instance.pk))
         except IntegrityError:
             return fail(message="Failed to update publication.")
         return ok(data=serializer.data)
 
-
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        pk       = str(instance.pk)
         instance.delete()
-        return ok()
-
-
+        invalidate_publication(pk=pk)
+        return ok(message="Publication deleted.")
 
 
 class SeminarViewSet(viewsets.ModelViewSet):
