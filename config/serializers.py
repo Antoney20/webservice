@@ -187,12 +187,23 @@ class FellowshipSerializer(serializers.ModelSerializer):
             return None
         return value
 
-
 class InternshipSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Internship
-        fields = "__all__"
+    id          = serializers.UUIDField(read_only=True)
+    created_by  = UserSerializer(read_only=True)
+    team_member = TeamMemberSerializer(read_only=True)
+    team_member_id = serializers.PrimaryKeyRelatedField(
+        queryset=TeamMember.objects.all(),
+        source="team_member",
+        write_only=True,
+        required=False,
+        allow_null=True,
+    )
+    name = serializers.CharField(read_only=True)
 
+    class Meta:
+        model            = Internship
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by", "name"]
 
 class PublicationSerializer(serializers.ModelSerializer):
     id         = serializers.UUIDField(read_only=True)

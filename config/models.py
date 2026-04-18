@@ -4,6 +4,13 @@ from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 
 
+from cuid2 import cuid_wrapper
+
+cuid_generator = cuid_wrapper()
+
+def generate_cuid():
+    return cuid_generator()
+
 class UserRole(models.TextChoices):
     ADMIN = "ADMIN"
     USER  = "USER"
@@ -37,6 +44,16 @@ class ReportType(models.TextChoices):
     OTHER            = "OTHER"
 
 
+class CuidMixin(models.Model):
+    """Ensures cuid is always generated on save if id is empty."""
+    
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = generate_cuid()
+        super().save(*args, **kwargs)
+    
+    class Meta:
+        abstract = True
 
 class UserManager(BaseUserManager):
 
@@ -63,11 +80,12 @@ class UserManager(BaseUserManager):
         return self._create(email, password, **extra)
 
 
-class User(AbstractBaseUser, PermissionsMixin):
+class User(AbstractBaseUser, PermissionsMixin ,CuidMixin):
     """
     First-party user model.  email is the login credential.
     Role-based access (ADMIN / USER) is enforced by DRF permission classes.
     """
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     email      = models.EmailField(unique=True, db_index=True)
     name       = models.CharField(max_length=255)
     role       = models.CharField(
@@ -106,8 +124,8 @@ class User(AbstractBaseUser, PermissionsMixin):
         return self.role in (UserRole.ADMIN,)
 
 
-class Content(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class Content(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=255)
     excerpt = models.TextField(null=True, blank=True)
     content = models.TextField(null=True, blank=True)
@@ -141,8 +159,8 @@ class Content(models.Model):
         return self.title
 
 
-class ContentSection(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class ContentSection(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     content = models.ForeignKey(Content, on_delete=models.CASCADE, related_name="sections", db_index=True)
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField()
@@ -206,8 +224,8 @@ class TeamMember(models.Model):
 # Fellowship
 # ---------------------------------------------------------------------------
 
-class Fellowship(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class Fellowship(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     name = models.CharField(max_length=255, db_index=True)
     topic = models.CharField(max_length=255)
     type = models.CharField(max_length=100, db_index= True)
@@ -256,43 +274,61 @@ class Fellowship(models.Model):
         return f"{self.name} ({self.year})"
 
 
-class Internship(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    name = models.CharField(max_length=255, db_index=True)
-    course = models.CharField(max_length=255)
-    university = models.CharField(max_length=255)
-    country = models.CharField(max_length=100, db_index=True)
-    internship_position = models.CharField(max_length=255, db_index=True)
-    year = models.CharField(max_length=20, db_index=True)
-    status = models.CharField(max_length=20, choices=InternshipStatus.choices, default=InternshipStatus.CURRENT, db_index=True)
-    start_date = models.DateTimeField(null=True, blank=True)
-    end_date = models.DateTimeField(null=True, blank=True)
-    description = models.TextField(null=True, blank=True)
-    
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+class Internship(CuidMixin,models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
+    # Link to team member — all interns should be team members
+    # nullable to preserve existing records
+    team_member          = models.ForeignKey(
+                               TeamMember,
+                               on_delete=models.SET_NULL,
+                               null=True,
+                               blank=True,
+                               related_name="internships",
+                               db_index=True,
+                           )
+    name                 = models.CharField(max_length=255, db_index=True)
+    course               = models.CharField(max_length=255)
+    university           = models.CharField(max_length=255)
+    country              = models.CharField(max_length=100, db_index=True)
+    internship_position  = models.CharField(max_length=255, db_index=True)
+    year                 = models.CharField(max_length=20, db_index=True)
+    status               = models.CharField(max_length=20, choices=InternshipStatus.choices, default=InternshipStatus.CURRENT, db_index=True)
+    start_date           = models.DateTimeField(null=True, blank=True)
+    end_date             = models.DateTimeField(null=True, blank=True)
+    description          = models.TextField(null=True, blank=True)
+
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="created_internships")
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "internships"
-        indexes = [
+        indexes  = [
             models.Index(fields=["name"]),
             models.Index(fields=["year"]),
             models.Index(fields=["status"]),
             models.Index(fields=["country"]),
             models.Index(fields=["internship_position"]),
+            models.Index(fields=["team_member"]),
         ]
 
     def __str__(self):
         return f"{self.name} — {self.internship_position}"
+
+    def save(self, *args, **kwargs):
+        if not self.id:
+            self.id = generate_cuid()
+        if self.team_member:
+            self.name = self.team_member.name
+        super().save(*args, **kwargs)
 
 
 # ---------------------------------------------------------------------------
 # Publication
 # ---------------------------------------------------------------------------
 
-class Publication(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class Publication(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=500, db_index=True)
     abstract = models.TextField(null=True, blank=True)
     journal = models.CharField(max_length=255, null=True, blank=True)
@@ -329,8 +365,8 @@ class Publication(models.Model):
 # Seminar
 # ---------------------------------------------------------------------------
 
-class Seminar(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class Seminar(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=500, db_index=True)
     description = models.TextField()
     image = models.ImageField(upload_to='site/images/seminar/', null=True, blank=True)
@@ -394,7 +430,7 @@ class Course(models.Model):
 # --------------------------------------------------------------------------
 
 class Training(models.Model):
-    id                   = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title                = models.CharField(max_length=500)
     description          = models.TextField()
     detailed_description = models.TextField(null=True, blank=True)
@@ -502,8 +538,8 @@ class News(models.Model):
 # Report & Download
 # ---------------------------------------------------------------------------
 
-class Report(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class Report(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=500)
     description = models.TextField(null=True, blank=True)
     year_published = models.IntegerField(null=True, blank=True)
@@ -547,8 +583,8 @@ class Download(models.Model):
 # Data Catalogue
 # ---------------------------------------------------------------------------
 
-class DataCatalogue(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class DataCatalogue(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=500, db_index=True)
     description = models.TextField(null=True, blank=True)
     category = models.CharField(max_length=255, null=True, blank=True, db_index=True)
@@ -580,7 +616,7 @@ class DataCatalogue(models.Model):
         return self.title
 
 
-class DataCatalogueView(models.Model):
+class DataCatalogueView(CuidMixin, models.Model):
     item = models.ForeignKey(DataCatalogue, on_delete=models.CASCADE, related_name="views", db_index=True)
     ip_address = models.GenericIPAddressField(db_index=True)
     user_agent = models.TextField(null=True, blank=True)
@@ -626,7 +662,7 @@ class PolicyBrief(models.Model):
 
 
 
-class Subscription(models.Model):
+class Subscription(CuidMixin, models.Model):
     email      = models.EmailField(unique=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
@@ -643,7 +679,7 @@ class Subscription(models.Model):
 # Contact Form
 # ---------------------------------------------------------------------------
 
-class ContactForm(models.Model):
+class ContactForm( models.Model):
     full_name  = models.CharField(max_length=255, db_column="fullName")
     email      = models.EmailField()
     subject    = models.CharField(max_length=500)
@@ -664,8 +700,7 @@ class ContactForm(models.Model):
 # Rate Limit
 # ---------------------------------------------------------------------------
 
-class RateLimit(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class RateLimit( models.Model):
     ip_address   = models.GenericIPAddressField()
     endpoint     = models.CharField(max_length=500)
     attempts     = models.IntegerField(default=1)
@@ -685,8 +720,7 @@ class RateLimit(models.Model):
 # Blocked IP
 # ---------------------------------------------------------------------------
 
-class BlockedIP(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class BlockedIP( models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
     reason     = models.CharField(max_length=500, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -700,8 +734,8 @@ class BlockedIP(models.Model):
 # Audit Log
 # ---------------------------------------------------------------------------
 
-class AuditLog(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class AuditLog( models.Model):
+    id = models.AutoField(primary_key=True)
     user_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     user_email = models.EmailField(null=True, blank=True)
     action = models.CharField(max_length=255, db_index=True)
@@ -738,8 +772,8 @@ class AuditLog(models.Model):
 # System Log
 # ---------------------------------------------------------------------------
 
-class SystemLog(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+class SystemLog( models.Model):
+    id = models.AutoField(primary_key=True)
     level = models.CharField(max_length=20, db_index=True)
     message = models.TextField()
     component = models.CharField(max_length=255, db_index=True)

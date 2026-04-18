@@ -57,13 +57,10 @@ class UserViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = User.objects.get(pk=uuid.UUID(pk))
-        except (ValueError, User.DoesNotExist):
-            try:
-                obj = User.objects.get(pk=int(pk))
-            except (ValueError, User.DoesNotExist):
-                from rest_framework.exceptions import NotFound
-                raise NotFound()
+            obj = User.objects.get(pk=pk)
+        except User.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -335,31 +332,68 @@ class FellowshipViewSet(viewsets.ModelViewSet):
         return ok(message="Fellowship deleted.")
 
 class InternshipViewSet(viewsets.ModelViewSet):
-    queryset = Internship.objects.all()
-    serializer_class = InternshipSerializer
+    queryset           = Internship.objects.select_related("team_member", "created_by").order_by("-created_at")
+    serializer_class   = InternshipSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["status", "year", "country"]
-    search_fields = ["name", "university", "internship_position"]
-    ordering_fields = ["year", "created_at"]
-    ordering = ["-year"]
+    filterset_fields   = ["status", "year", "country", "team_member"]
+    search_fields      = ["name", "university", "internship_position", "country"]
+    ordering_fields    = ["year", "created_at", "name"]
+    ordering           = ["-year"]
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
 
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Internship.objects.select_related("team_member", "created_by").get(pk=uuid.UUID(pk))
+        except (ValueError, Internship.DoesNotExist):
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
+            serializer.save(created_by=request.user)
         except IntegrityError:
             return fail(message="Failed to create internship.")
         return ok_created()
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            serializer.save()
+        except IntegrityError:
+            return fail(message="Failed to update internship.")
+        return ok(data=serializer.data)
 
-
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return ok(message="Internship deleted.")
+    
+    
+    
 class PublicationViewSet(viewsets.ModelViewSet):
     queryset         = Publication.objects.select_related("created_by").all()
     serializer_class = PublicationSerializer
