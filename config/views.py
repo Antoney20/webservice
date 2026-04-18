@@ -23,6 +23,11 @@ from core.caches.team import (
     get_team_item, set_team_item,
     invalidate_team,
 )
+from core.caches.fellowships import (
+    get_fellowship_list, set_fellowship_list,
+    get_fellowship_item, set_fellowship_item,
+    invalidate_fellowship,
+)
 
 
 from core.middleware.tracking import get_client_ip
@@ -400,6 +405,9 @@ class TeamMemberViewSet(viewsets.ModelViewSet):
         instance.delete()
         invalidate_team(pk=pk)
         return ok(message="Team member deleted.")
+    
+
+
 class FellowshipViewSet(viewsets.ModelViewSet):
     queryset           = Fellowship.objects.select_related("team_member", "created_by").all()
     serializer_class   = FellowshipSerializer
@@ -425,15 +433,27 @@ class FellowshipViewSet(viewsets.ModelViewSet):
         return obj
 
     def list(self, request, *args, **kwargs):
+        cached = get_fellowship_list()
+        if cached is not None:
+            return ok(data=cached)
+
         qs         = self.filter_queryset(self.get_queryset())
         page       = self.paginate_queryset(qs)
         serializer = self.get_serializer(page if page is not None else qs, many=True)
-        if page is not None:
-            return ok(data=self.get_paginated_response(serializer.data).data)
-        return ok(data=serializer.data)
+        result     = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_fellowship_list(result)
+        return ok(data=result)
 
     def retrieve(self, request, *args, **kwargs):
-        return ok(data=self.get_serializer(self.get_object()).data)
+        pk     = self.kwargs.get("pk")
+        cached = get_fellowship_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        set_fellowship_item(pk, serializer.data)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -441,6 +461,7 @@ class FellowshipViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             serializer.save(created_by=request.user)
+            invalidate_fellowship()
         except IntegrityError:
             return fail(message="Failed to create fellowship.")
         return ok_created()
@@ -452,22 +473,22 @@ class FellowshipViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            new_image = request.FILES.get("image")
-            if new_image and instance.image:
+            if request.FILES.get("image") and instance.image:
                 instance.image.delete(save=False)
             serializer.save()
+            invalidate_fellowship(pk=str(instance.pk))
         except IntegrityError:
             return fail(message="Failed to update fellowship.")
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        pk       = str(instance.pk)
         if instance.image:
             instance.image.delete(save=False)
         instance.delete()
+        invalidate_fellowship(pk=pk)
         return ok(message="Fellowship deleted.")
-
-
 
 
 class InternshipViewSet(viewsets.ModelViewSet):
