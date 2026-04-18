@@ -138,7 +138,7 @@ class Content(CuidMixin, models.Model):
     image_alt = models.CharField(max_length=255, null=True, blank=True, db_column="imageAlt")
     category = models.CharField(max_length=255, null=True, blank=True, db_index=True)
     tags = models.JSONField(default=list, blank=True)
-    author_name = models.CharField(max_length=255, null=True, blank=True)
+    author_name = models.CharField(max_length=255, null=True, blank=True, db_column="authorId")
     created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="created_contents")
     
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
@@ -161,7 +161,13 @@ class Content(CuidMixin, models.Model):
 
 class ContentSection(CuidMixin, models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
-    content = models.ForeignKey(Content, on_delete=models.CASCADE, related_name="sections", db_index=True)
+    content = models.ForeignKey(
+    Content,
+    on_delete=models.CASCADE,
+    related_name="sections",
+    db_index=True,
+    db_column="contentId",
+)
     title = models.CharField(max_length=255, null=True, blank=True)
     body = models.TextField()
     order = models.IntegerField()
@@ -539,24 +545,24 @@ class News(models.Model):
 # ---------------------------------------------------------------------------
 
 class Report(CuidMixin, models.Model):
-    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
-    title = models.CharField(max_length=500)
-    description = models.TextField(null=True, blank=True)
-    year_published = models.IntegerField(null=True, blank=True)
-    date_published = models.DateTimeField(null=True, blank=True, auto_now_add=False)
-    type = models.CharField(max_length=50, choices=ReportType.choices)
-    tags = models.JSONField(default=list, blank=True)
-    keywords = models.JSONField(default=list, blank=True)
-    is_public = models.BooleanField(default=False)
-    file = models.FileField(upload_to='reports/', null=True, blank=True)
-    file_name = models.CharField(max_length=500)
-    drive_link = models.URLField(null=True, blank=True)
-    file_type = models.CharField(max_length=100, null=True, blank=True)
-    file_size = models.IntegerField(null=True, blank=True)
-    
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    id             = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
+    title          = models.CharField(max_length=500)
+    description    = models.TextField(null=True, blank=True)
+    year_published = models.IntegerField(null=True, blank=True,  db_column="yearPublished")
+    date_published = models.DateTimeField(null=True, blank=True, db_column="datePublished")
+    type           = models.CharField(max_length=50, choices=ReportType.choices)
+    tags           = models.JSONField(default=list, blank=True)
+    keywords       = models.JSONField(default=list, blank=True)
+    is_public      = models.BooleanField(default=False,          db_column="isPublic")
+    file           = models.FileField(upload_to='reports/', null=True, blank=True)
+    file_name      = models.CharField(max_length=500,            db_column="fileName")
+    drive_link     = models.URLField(null=True, blank=True,      db_column="driveLink")
+    file_type      = models.CharField(max_length=100, null=True, blank=True, db_column="fileType")
+    file_size      = models.IntegerField(null=True, blank=True,  db_column="fileSize")
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)  # → created_by_id ✓
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
-    updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
+    updated_at = models.DateTimeField(auto_now=True,     db_column="updatedAt")
 
     class Meta:
         db_table = "report"
@@ -564,11 +570,10 @@ class Report(CuidMixin, models.Model):
     def __str__(self):
         return self.title
 
-
 class Download(models.Model):
     user_id = models.CharField(max_length=255, null=True, blank=True)
     user_email = models.EmailField(null=True, blank=True)
-    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="downloads")
+    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="downloads", db_column="reportId",)
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
     # updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 

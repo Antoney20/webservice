@@ -205,6 +205,17 @@ class InternshipSerializer(serializers.ModelSerializer):
         fields           = "__all__"
         read_only_fields = ["created_at", "updated_at", "created_by", "name"]
 
+LIST_FIELDS = [
+    "id", "title", "abstract", "journal", "authors", "cema_authors",
+    "publication_year", "publication_type", "category", "tags", "url", "updated_at",
+]
+
+class PublicationListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = Publication
+        fields = LIST_FIELDS
+
+
 class PublicationSerializer(serializers.ModelSerializer):
     id         = serializers.UUIDField(read_only=True)
     created_by = UserSerializer(read_only=True)

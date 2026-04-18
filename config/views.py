@@ -1,9 +1,12 @@
+import json
 import uuid
 
 from rest_framework import viewsets
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
+from core.caches.content import  get_content_list, set_content_list, invalidate_content_list, get_content_item, set_content_item, invalidate_content_item, invalidate_content
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
@@ -15,7 +18,7 @@ from .models import (
     AuditLog, SystemLog,
 )
 from .serializers import (
-    ContentListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    ContentListSerializer, PublicationListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -34,7 +37,6 @@ def ok(data=None, status_code=status.HTTP_200_OK):
 
 def ok_created():
     return Response({"success": True}, status=status.HTTP_201_CREATED)
-
 
 def fail(errors=None, message=None, status_code=status.HTTP_400_BAD_REQUEST):
     body = {"success": False}
@@ -107,37 +109,22 @@ class UserViewSet(viewsets.ModelViewSet):
         instance.delete()
         return ok(message="User deleted.")
 
-
 class ContentViewSet(viewsets.ModelViewSet):
-    queryset = Content.objects.all()
+    queryset           = Content.objects.all()
     permission_classes = [EditorWrite]
-    filterset_fields = ["type", "status", "featured", "category"]
-    search_fields = ["title", "excerpt"]
-    ordering_fields = ["date", "published_at", "created_at"]
-    ordering = ["-created_at"]
-
+    filterset_fields   = ["type", "status", "featured", "category"]
+    search_fields      = ["title", "excerpt"]
+    ordering_fields    = ["date", "published_at", "created_at"]
+    ordering           = ["-created_at"]
 
     def get_object(self):
         pk = self.kwargs.get("pk")
-        print(f"fetching content for id = {pk}")
-
         try:
-            try:
-                # Try UUID first
-                obj = Content.objects.prefetch_related("sections").get(pk=uuid.UUID(pk))
-            except (ValueError, TypeError):
-                # Fallback to raw string
-                obj = Content.objects.prefetch_related("sections").get(pk=pk)
-
-            print(f"found content : {obj.title}")
-
+            obj = self.get_queryset().get(pk=pk)
         except Content.DoesNotExist:
-            from rest_framework.exceptions import NotFound
             raise NotFound()
-
         self.check_object_permissions(self.request, obj)
         return obj
-
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -150,28 +137,123 @@ class ContentViewSet(viewsets.ModelViewSet):
             qs = qs.prefetch_related("sections")
         return qs
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
+    def _parse_sections(self):
+        sections_data = self.request.data.get("sections", [])
+        if isinstance(sections_data, str):
+            try:
+                sections_data = json.loads(sections_data)
+            except (json.JSONDecodeError, ValueError):
+                sections_data = []
+        return sections_data if isinstance(sections_data, list) else []
+
+    def _save_sections(self, instance, sections_data):
+        instance.sections.all().delete()
+        for section in sections_data:
+            if not section.get("body", "").strip():
+                continue
+            ContentSection.objects.create(
+                content=instance,
+                title=section.get("title") or None,
+                body=section.get("body", ""),
+                order=section.get("order", 0),
+                image_alt=section.get("image_alt") or None,
+            )
+
+    # ── List ──────────────────────────────────────────────────────────────
+
+    def list(self, request, *args, **kwargs):
+        cached = get_content_list()
+        if cached is not None:
+            return ok(data=cached)
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        data       = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_content_list(data)
+        return ok(data=data)
+
+    # ── Retrieve ──────────────────────────────────────────────────────────
+
+    def retrieve(self, request, *args, **kwargs):
+        pk     = self.kwargs.get("pk")
+        cached = get_content_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        data       = serializer.data
+        set_content_item(pk, data)
+        return ok(data=data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            self.perform_create(serializer)
-        except IntegrityError:
+            instance = serializer.save(created_by=request.user)
+            self._save_sections(instance, self._parse_sections())
+            invalidate_content()
+        except IntegrityError as e:
             return fail(message="Failed to create content.")
-        return ok_created()
+        except Exception as e:
+            return fail(message=str(e))
+        # Return fresh instance with sections
+        out = self.get_serializer(
+            Content.objects.prefetch_related("sections").get(pk=instance.pk)
+        )
+        return ok(data=out.data)
 
 
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            instance = serializer.save()
+            self._save_sections(instance, self._parse_sections())
+            invalidate_content(pk=str(instance.pk))
+        except IntegrityError:
+            return fail(message="Failed to update content.")
+        except Exception as e:
+            return fail(message=str(e))
+        # Return fresh instance with sections
+        out = self.get_serializer(
+            Content.objects.prefetch_related("sections").get(pk=instance.pk)
+        )
+        return ok(data=out.data)
+
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        pk       = instance.pk
+        instance.delete()
+        invalidate_content(pk=pk)
+        return ok()
 
 # from config.models import Content
 class ContentSectionViewSet(viewsets.ModelViewSet):
-    queryset = ContentSection.objects.select_related("content").all()
-    serializer_class = ContentSectionSerializer
+    serializer_class   = ContentSectionSerializer
     permission_classes = [EditorWrite]
-    filterset_fields = ["content"]
-    ordering = ["order"]
+
+    def get_queryset(self):
+        return ContentSection.objects.filter(
+            content_id=self.kwargs["content_pk"]
+        ).order_by("order")
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = ContentSection.objects.get(pk=pk)
+        except ContentSection.DoesNotExist:
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def perform_create(self, serializer):
+        content = Content.objects.get(pk=self.kwargs["content_pk"])
+        serializer.save(content=content)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -179,9 +261,30 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             self.perform_create(serializer)
-        except IntegrityError:
-            return fail(message="Failed to create content section.")
+            invalidate_content(pk=self.kwargs["content_pk"])  # bust cache
+        except Exception as e:
+            return fail(message=str(e))
         return ok_created()
+
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            self.perform_update(serializer)
+            invalidate_content(pk=str(instance.content_id))  # bust cache
+        except Exception as e:
+            return fail(message=str(e))
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        content_pk = str(instance.content_id)
+        instance.delete()
+        invalidate_content(pk=content_pk)  # bust cache
+        return ok()
 
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
@@ -403,16 +506,23 @@ class PublicationViewSet(viewsets.ModelViewSet):
     ordering_fields  = ["publication_year", "date_published", "created_at"]
     ordering         = ["-publication_year"]
 
+
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Publication.objects.get(pk=uuid.UUID(pk))
-        except (ValueError, Publication.DoesNotExist):
+            obj = Publication.objects.get(pk=pk)
+        except Publication.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return PublicationListSerializer
+        return PublicationSerializer
+    
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
@@ -446,6 +556,11 @@ class PublicationViewSet(viewsets.ModelViewSet):
             return fail(message="Failed to update publication.")
         return ok(data=serializer.data)
 
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.delete()
+        return ok()
 
 class SeminarViewSet(viewsets.ModelViewSet):
     queryset           = Seminar.objects.order_by("-created_at")
@@ -535,8 +650,6 @@ class CourseViewSet(viewsets.ModelViewSet):
         except IntegrityError:
             return fail(message="Failed to create course.")
         return ok_created()
-
-
 
 
 class TrainingViewSet(viewsets.ModelViewSet):
@@ -796,17 +909,9 @@ class ReportViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Report.objects.annotate(
-                download_count=Count("downloads")
-            ).get(pk=uuid.UUID(pk))
-        except (ValueError, Report.DoesNotExist):
-            try:
-                obj = Report.objects.annotate(
-                    download_count=Count("downloads")
-                ).get(pk=int(pk))
-            except (ValueError, Report.DoesNotExist):
-                from rest_framework.exceptions import NotFound
-                raise NotFound()
+            obj = Report.objects.annotate(download_count=Count("downloads")).get(pk=pk)
+        except Report.DoesNotExist:
+            raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -825,7 +930,10 @@ class ReportViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-        self._save_with_file_meta(serializer, created_by=request.user)
+        try:
+            self._save_with_file_meta(serializer, created_by=request.user)
+        except Exception as e:
+            return fail(message=str(e))
         return ok_created()
 
     def update(self, request, *args, **kwargs):
@@ -834,12 +942,12 @@ class ReportViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(instance, data=request.data, partial=partial)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-
-        new_file = request.data.get("file")
-        if new_file and instance.file:
-            instance.file.delete(save=False)
-
-        self._save_with_file_meta(serializer)
+        try:
+            if request.data.get("file") and instance.file:
+                instance.file.delete(save=False)
+            self._save_with_file_meta(serializer)
+        except Exception as e:
+            return fail(message=str(e))
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
@@ -847,11 +955,9 @@ class ReportViewSet(viewsets.ModelViewSet):
         if instance.file:
             instance.file.delete(save=False)
         instance.delete()
-        return ok(message="Report deleted.")
-
+        return ok()
 
     def _save_with_file_meta(self, serializer, **kwargs):
-        """Extract file metadata and persist alongside the report."""
         file = serializer.validated_data.get("file")
         if file:
             kwargs["file_size"] = file.size
