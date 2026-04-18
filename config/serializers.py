@@ -165,7 +165,7 @@ class TeamMemberSerializer(serializers.ModelSerializer):
 
 
 class FellowshipSerializer(serializers.ModelSerializer):
-    id          = serializers.UUIDField(read_only=True)
+    id          = serializers.CharField(read_only=True)
     created_by  = UserSerializer(read_only=True)
     team_member = TeamMemberSerializer(read_only=True)
     team_member_id = serializers.PrimaryKeyRelatedField(
@@ -179,13 +179,22 @@ class FellowshipSerializer(serializers.ModelSerializer):
 
     class Meta:
         model            = Fellowship
-        fields           = "__all__"
+        fields           = [
+            "id", "name", "topic", "type", "year", "status",
+            "mentor", "start_date", "end_date", "institution",
+            "description", "funding_source", "image",
+            "team_member", "team_member_id",
+            "created_by", "created_at", "updated_at",
+        ]
         read_only_fields = ["created_at", "updated_at", "created_by"]
 
     def validate_image(self, value):
         if not value:
             return None
         return value
+
+
+
 
 class InternshipSerializer(serializers.ModelSerializer):
     id          = serializers.UUIDField(read_only=True)
@@ -198,12 +207,22 @@ class InternshipSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
-    name = serializers.CharField(read_only=True)
+    name  = serializers.CharField(read_only=True)
+    image = serializers.SerializerMethodField()
 
     class Meta:
         model            = Internship
         fields           = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by", "name"]
+        read_only_fields = ["created_at", "updated_at", "created_by", "name", "image"]
+
+    def get_image(self, obj):
+        if obj.team_member and obj.team_member.image:
+            request = self.context.get("request")
+            if request:
+                return request.build_absolute_uri(obj.team_member.image.url)
+            return obj.team_member.image.url
+        return None
+
 
 LIST_FIELDS = [
     "id", "title", "abstract", "journal", "authors", "cema_authors",

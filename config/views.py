@@ -8,6 +8,12 @@ from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
 from core.caches.content import  get_content_list, set_content_list, invalidate_content_list, get_content_item, set_content_item, invalidate_content_item, invalidate_content
 from core.caches.seminars import get_seminar_item, set_seminar_item, get_seminar_list, invalidate_seminar, set_seminar_list
+from core.caches.internships import (
+    get_internship_list, set_internship_list,
+    get_internship_item, set_internship_item,
+    invalidate_internship,
+)
+
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
@@ -382,13 +388,10 @@ class FellowshipViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Fellowship.objects.select_related("team_member", "created_by").get(pk=uuid.UUID(pk))
-        except (ValueError, Fellowship.DoesNotExist):
-            try:
-                obj = Fellowship.objects.select_related("team_member", "created_by").get(pk=int(pk))
-            except (ValueError, Fellowship.DoesNotExist):
-                from rest_framework.exceptions import NotFound
-                raise NotFound()
+            obj = Fellowship.objects.select_related("team_member", "created_by").get(pk=pk)
+        except Fellowship.DoesNotExist:
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
 
@@ -435,8 +438,11 @@ class FellowshipViewSet(viewsets.ModelViewSet):
         instance.delete()
         return ok(message="Fellowship deleted.")
 
+
+
+
 class InternshipViewSet(viewsets.ModelViewSet):
-    queryset           = Internship.objects.select_related("team_member", "created_by").order_by("-created_at")
+    queryset           = Internship.objects.select_related("team_member", "created_by").order_by("-year")
     serializer_class   = InternshipSerializer
     permission_classes = [EditorWrite]
     filterset_fields   = ["status", "year", "country", "team_member"]
@@ -452,7 +458,9 @@ class InternshipViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Internship.objects.select_related("team_member", "created_by").get(pk=uuid.UUID(pk))
+            obj = Internship.objects.select_related(
+                "team_member", "created_by"
+            ).get(pk=uuid.UUID(pk))
         except (ValueError, Internship.DoesNotExist):
             from rest_framework.exceptions import NotFound
             raise NotFound()
@@ -460,15 +468,31 @@ class InternshipViewSet(viewsets.ModelViewSet):
         return obj
 
     def list(self, request, *args, **kwargs):
+        cached = get_internship_list()
+        if cached is not None:
+            return ok(data=cached)
+
         qs         = self.filter_queryset(self.get_queryset())
         page       = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page if page is not None else qs, many=True)
-        if page is not None:
-            return ok(data=self.get_paginated_response(serializer.data).data)
-        return ok(data=serializer.data)
+        serializer = self.get_serializer(
+            page if page is not None else qs,
+            many=True,
+            context={"request": request},
+        )
+        result = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_internship_list(result)
+        return ok(data=result)
 
     def retrieve(self, request, *args, **kwargs):
-        return ok(data=self.get_serializer(self.get_object()).data)
+        pk     = self.kwargs.get("pk")
+        cached = get_internship_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, context={"request": request})
+        set_internship_item(pk, serializer.data)
+        return ok(data=serializer.data)
 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -476,6 +500,7 @@ class InternshipViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             serializer.save(created_by=request.user)
+            invalidate_internship()
         except IntegrityError:
             return fail(message="Failed to create internship.")
         return ok_created()
@@ -488,15 +513,17 @@ class InternshipViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             serializer.save()
+            invalidate_internship(pk=str(instance.pk))
         except IntegrityError:
             return fail(message="Failed to update internship.")
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
-        self.get_object().delete()
+        instance = self.get_object()
+        pk       = str(instance.pk)
+        instance.delete()
+        invalidate_internship(pk=pk)
         return ok(message="Internship deleted.")
-    
-    
     
 class PublicationViewSet(viewsets.ModelViewSet):
     queryset         = Publication.objects.select_related("created_by").all()

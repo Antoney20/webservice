@@ -231,43 +231,34 @@ class TeamMember(models.Model):
 # ---------------------------------------------------------------------------
 
 class Fellowship(CuidMixin, models.Model):
-    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
-    name = models.CharField(max_length=255, db_index=True)
-    topic = models.CharField(max_length=255)
-    type = models.CharField(max_length=100, db_index= True)
-    year = models.CharField(max_length=20, db_index=True)
-    status = models.CharField(max_length=50, db_index=True)
-    mentor = models.CharField(max_length=255, null=True, blank=True)
-    start_date = models.DateTimeField(null=True, blank=True)
-    end_date = models.DateTimeField(null=True, blank=True)
-    institution = models.CharField(max_length=255, null=True, blank=True, db_index=True)
-    description = models.TextField(null=True, blank=True)
+    id             = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
+    name           = models.CharField(max_length=255, db_index=True)  # free text OR auto-filled from team_member
+    topic          = models.CharField(max_length=255)
+    type           = models.CharField(max_length=100, db_index=True)
+    year           = models.CharField(max_length=20, db_index=True)
+    status         = models.CharField(max_length=50, db_index=True)
+    mentor         = models.CharField(max_length=255, null=True, blank=True)
+    start_date     = models.DateTimeField(null=True, blank=True)
+    end_date       = models.DateTimeField(null=True, blank=True)
+    institution    = models.CharField(max_length=255, null=True, blank=True, db_index=True)
+    description    = models.TextField(null=True, blank=True)
     funding_source = models.CharField(max_length=255, null=True, blank=True)
-    image = models.ImageField(upload_to='site/images/fellows/', null=True, blank=True)
-
-    # Relationship to TeamMember (nullable — fellow may not be a team member)
-    team_member = models.ForeignKey(
-        TeamMember,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name="fellowships",
-        db_index=True,
-    )
-
-    # Custom fellow info (when not linked to a TeamMember)
-    custom_name = models.CharField(max_length=255, null=True, blank=True)
-    custom_title = models.CharField(max_length=255, null=True, blank=True)
-    custom_dept = models.CharField(max_length=255, null=True, blank=True)
-    custom_email = models.EmailField(null=True, blank=True)
-
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    image          = models.ImageField(upload_to='site/images/fellows/', null=True, blank=True)
+    team_member    = models.ForeignKey(
+                         TeamMember,
+                         on_delete=models.SET_NULL,
+                         null=True,
+                         blank=True,
+                         related_name="fellowships",
+                         db_index=True,
+                     )
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
 
     class Meta:
         db_table = "fellowships"
-        indexes = [
+        indexes  = [
             models.Index(fields=["name"]),
             models.Index(fields=["type"]),
             models.Index(fields=["status"]),
@@ -276,9 +267,14 @@ class Fellowship(CuidMixin, models.Model):
             models.Index(fields=["team_member"]),
         ]
 
+    def save(self, *args, **kwargs):
+        # Auto-sync name from team member when linked
+        if self.team_member_id and self.team_member:
+            self.name = self.team_member.name
+        super().save(*args, **kwargs)
+
     def __str__(self):
         return f"{self.name} ({self.year})"
-
 
 class Internship(CuidMixin,models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
