@@ -363,6 +363,7 @@ class Publication(CuidMixin, models.Model):
         return self.title
 
 
+
 # ---------------------------------------------------------------------------
 # Seminar
 # ---------------------------------------------------------------------------
@@ -697,6 +698,34 @@ class ContactForm( models.Model):
         return f"{self.full_name} — {self.subject}"
 
 
+  
+class Career(models.Model):
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title       = models.CharField(max_length=500, db_index=True)
+    body        = models.TextField()
+    image       = models.ImageField(upload_to='site/images/careers/', null=True, blank=True)
+    file        = models.FileField(upload_to='site/files/careers/', null=True, blank=True)
+    is_open     = models.BooleanField(default=True, db_index=True)
+    show        = models.BooleanField(default=True, db_index=True)
+    apply_link  = models.URLField(null=True, blank=True)
+    deadline    = models.DateTimeField(null=True, blank=True, db_index=True)
+    highlights  = models.JSONField(default=list, blank=True)
+
+    created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "careers"
+        indexes  = [
+            models.Index(fields=["is_open"]),
+            models.Index(fields=["show"]),
+            models.Index(fields=["deadline"]),
+        ]
+
+    def __str__(self):
+        return self.title
+
 # ---------------------------------------------------------------------------
 # Rate Limit
 # ---------------------------------------------------------------------------
@@ -798,3 +827,5 @@ class SystemLog( models.Model):
 
     def __str__(self):
         return f"[{self.level}] {self.component}: {self.message[:60]}"
+    
+  

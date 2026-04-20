@@ -7,7 +7,7 @@ from rest_framework.response import Response
 from core.validators.email import validate_email_address
 from core.validators.file import validate_file
 from .models import (
-    TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
@@ -502,6 +502,31 @@ class ContactFormSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         return validate_email_address(value)
+    
+class CareerSerializer(serializers.ModelSerializer):
+    id         = serializers.UUIDField(read_only=True)
+    created_by = UserSerializer(read_only=True)
+    image      = serializers.ImageField(required=False, allow_null=True, use_url=True)
+    file       = serializers.FileField(required=False, allow_null=True, use_url=True)
+
+    class Meta:
+        model            = Career
+        fields           = "__all__"
+        read_only_fields = ["created_at", "updated_at", "created_by"]
+
+    def validate_image(self, value):
+        if not value:
+            return None
+        return value
+
+    def validate_file(self, value):
+        if not value:
+            return None
+        validate_file(value, self.context.get("request"))
+        return value
+
+    def validate_highlights(self, value):
+        return _parse_json_list(value)
 
 class RateLimitSerializer(serializers.ModelSerializer):
     class Meta:

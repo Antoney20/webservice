@@ -29,20 +29,26 @@ from core.caches.fellowships import (
     invalidate_fellowship,
 )
 
+from core.caches.careers import (
+    get_career_list, set_career_list,
+    get_career_item, set_career_item,
+    invalidate_career,
+)
+
 
 from core.middleware.tracking import get_client_ip
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
 from .models import (
-    TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
     AuditLog, SystemLog,
 )
 from .serializers import (
-    ContentListSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    CareerSerializer, ContentListSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -1247,6 +1253,99 @@ class PolicyBriefViewSet(viewsets.ModelViewSet):
             return fail(message="Failed to create policy brief.")
         return ok_created()
 
+
+
+
+class CareerViewSet(viewsets.ModelViewSet):
+    queryset           = Career.objects.select_related("created_by").order_by("-created_at")
+    serializer_class   = CareerSerializer
+    permission_classes = [EditorWrite]
+    filterset_fields   = ["is_open", "show"]
+    search_fields      = ["title", "body"]
+    ordering_fields    = ["deadline", "created_at", "title"]
+    ordering           = ["-created_at"]
+
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return []
+        return super().get_permissions()
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["request"] = self.request
+        return ctx
+
+    def get_object(self):
+        pk = self.kwargs.get("pk")
+        try:
+            obj = Career.objects.select_related("created_by").get(pk=uuid.UUID(pk))
+        except (ValueError, Career.DoesNotExist):
+            from rest_framework.exceptions import NotFound
+            raise NotFound()
+        self.check_object_permissions(self.request, obj)
+        return obj
+
+    def list(self, request, *args, **kwargs):
+        cached = get_career_list()
+        if cached is not None:
+            return ok(data=cached)
+
+        qs         = self.filter_queryset(self.get_queryset())
+        page       = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        result     = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
+        set_career_list(result)
+        return ok(data=result)
+
+    def retrieve(self, request, *args, **kwargs):
+        pk     = self.kwargs.get("pk")
+        cached = get_career_item(pk)
+        if cached is not None:
+            return ok(data=cached)
+
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance)
+        set_career_item(pk, serializer.data)
+        return ok(data=serializer.data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            serializer.save(created_by=request.user)
+            invalidate_career()
+        except IntegrityError:
+            return fail(message="Failed to create career.")
+        return ok_created()
+
+    def update(self, request, *args, **kwargs):
+        partial    = kwargs.pop("partial", False)
+        instance   = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        try:
+            if request.FILES.get("image") and instance.image:
+                instance.image.delete(save=False)
+            if request.FILES.get("file") and instance.file:
+                instance.file.delete(save=False)
+            serializer.save()
+            invalidate_career(pk=str(instance.pk))
+        except IntegrityError:
+            return fail(message="Failed to update career.")
+        return ok(data=serializer.data)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        pk       = str(instance.pk)
+        if instance.image:
+            instance.image.delete(save=False)
+        if instance.file:
+            instance.file.delete(save=False)
+        instance.delete()
+        invalidate_career(pk=pk)
+        return ok(message="Career deleted.")
 
 # ---------------------------------------------------------------------------
 # Admin-only

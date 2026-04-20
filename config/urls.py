@@ -24,6 +24,7 @@ router.register(r'data-catalogue-views',views.DataCatalogueViewViewSet, basename
 router.register(r'policy-briefs',       views.PolicyBriefViewSet,       basename='policy-brief')
 router.register(r'subscriptions',       views.SubscriptionViewSet,      basename='subscription')
 router.register(r'contact-forms',       views.ContactFormViewSet,      basename='contact-form')
+router.register(r"careers",             views.CareerViewSet)
 router.register(r'rate-limits',         views.RateLimitViewSet,         basename='rate-limit')
 router.register(r'audit-logs',          views.AuditLogViewSet,          basename='audit-log')
 router.register(r'system-logs',         views.SystemLogViewSet,         basename='system-log')
