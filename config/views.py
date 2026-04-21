@@ -514,10 +514,8 @@ class InternshipViewSet(viewsets.ModelViewSet):
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
-            obj = Internship.objects.select_related(
-                "team_member", "created_by"
-            ).get(pk=uuid.UUID(pk))
-        except (ValueError, Internship.DoesNotExist):
+            obj = Internship.objects.select_related("team_member", "created_by").get(pk=pk)
+        except Internship.DoesNotExist:
             from rest_framework.exceptions import NotFound
             raise NotFound()
         self.check_object_permissions(self.request, obj)

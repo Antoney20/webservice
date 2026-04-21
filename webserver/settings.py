@@ -48,7 +48,7 @@ INSTALLED_APPS = [
 # ---------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    "core.middleware.media_protection.MediaProtectionMiddleware",
+    # "core.middleware.media_protection.MediaProtectionMiddleware",
     "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -254,9 +254,13 @@ MEDIA_ROOT = BASE_DIR / "media"
 # ── Allowed origins for media reads ──────────────────────────────
 # Requests whose Origin/Referer is NOT in this list are blocked (403).
 # # Defaults to ALLOWED_HOSTS when not set.
-# MEDIA_ALLOWED_ORIGINS = [
-#     "https://yoursite.com",
-#     "https://www.yoursite.com",
-#     "http://localhost:3000",   # Next.js / Vite dev server
-#     "http://localhost:8000",   # Django dev server (for admin)
-# ]
+
+MEDIA_ALLOWED_ORIGINS = [
+    "https://cema-africa.uonbi.ac.ke",
+    "https://web.cema.africa",
+    "http://web.cema.africa",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+]
