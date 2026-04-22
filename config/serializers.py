@@ -475,10 +475,9 @@ class DataCatalogueViewSerializer(serializers.ModelSerializer):
     id = serializers.UUIDField(read_only=True)
 
     class Meta:
-        model            = DataCatalogueView
-        fields           = "__all__"
-        read_only_fields = ["created_at"]
-
+        model = DataCatalogueView
+        fields = "__all__"
+        read_only_fields = ["created_at", "ip_address"]
 
 class PolicyBriefSerializer(serializers.ModelSerializer):
     class Meta:

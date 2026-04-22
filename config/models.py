@@ -619,6 +619,7 @@ class DataCatalogue(CuidMixin, models.Model):
 
 
 class DataCatalogueView(CuidMixin, models.Model):
+    id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     item = models.ForeignKey(DataCatalogue, on_delete=models.CASCADE, related_name="views", db_index=True)
     ip_address = models.GenericIPAddressField(db_index=True)
     user_agent = models.TextField(null=True, blank=True)
@@ -725,10 +726,6 @@ class Career(models.Model):
 
     def __str__(self):
         return self.title
-
-# ---------------------------------------------------------------------------
-# Rate Limit
-# ---------------------------------------------------------------------------
 
 class RateLimit( models.Model):
     ip_address   = models.GenericIPAddressField()

@@ -48,7 +48,7 @@ INSTALLED_APPS = [
 # ---------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    # "core.middleware.media_protection.MediaProtectionMiddleware",
+    "core.middleware.media_protection.MediaProtectionMiddleware",
     "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -108,17 +108,18 @@ REST_FRAMEWORK = {
     # Throttling — applied globally; sensitive endpoints add SensitiveAnonThrottle
     # ---------------------------------------------------------------------------
     "DEFAULT_THROTTLE_CLASSES": [
-        "core.throttles.AnonBurstThrottle",
-        "core.throttles.AnonSustainedThrottle",
-        "core.throttles.AuthBurstThrottle",
-        "core.throttles.AuthSustainedThrottle",
+        "core.throttles.annon.AnonPostThrottle",
+        "core.throttles.aa.AnonBurstThrottle",
+        "core.throttles.aa.AnonSustainedThrottle",
+        "core.throttles.aa.AuthBurstThrottle",
+        "core.throttles.aa.AuthSustainedThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon_burst":     "30/min",    # anonymous burst
-        "anon_sustained": "300/hour",  # anonymous hourly cap
-        "auth_burst":     "60/min",    # authenticated burst
-        "auth_sustained": "2000/hour", # authenticated hourly cap
-        "sensitive_anon": "5/hour",    # subscribe / contact forms
+        "anon_burst":     "30/min",   
+        "anon_sustained": "500/hour",  
+        "auth_burst":     "60/min",   
+        "auth_sustained": "2000/hour", 
+        "sensitive_anon": "5/hour",    
     },
 }
 

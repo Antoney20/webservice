@@ -46,9 +46,6 @@ class IPBlockMiddleware:
         return blocked
 
 
-# ---------------------------------------------------------------------------
-# Called by throttles on violation — no separate ban cache key needed
-# ---------------------------------------------------------------------------
 
 VIOLATION_KEY       = "throttle_violations:{ip}"
 VIOLATION_THRESHOLD = 5
