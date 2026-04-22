@@ -7,8 +7,11 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.exceptions import TokenError
+from django.utils import timezone
 
-from core.permissions import IsAuthenticatedActive
+from core.permissions import IsAuthenticated
+
+
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
@@ -22,10 +25,6 @@ def _token_pair(user) -> dict:
         "refresh": str(refresh),
     }
 
-
-# ---------------------------------------------------------------------------
-# Login
-# ---------------------------------------------------------------------------
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
@@ -66,6 +65,8 @@ def login(request):
 
     tokens = _token_pair(user)
     logger.info("Login successful: %s", email)
+    user.last_login = timezone.now()
+    user.save(update_fields=["last_login"])
 
     return Response(
         {
@@ -121,7 +122,7 @@ def refresh(request):
 # ---------------------------------------------------------------------------
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticatedActive])
+@permission_classes([IsAuthenticated])
 def logout(request):
     """
     POST /api/auth/logout/
@@ -141,7 +142,7 @@ def logout(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticatedActive])
+@permission_classes([IsAuthenticated])
 def me(request):
     """
     GET /api/auth/me/

@@ -10,10 +10,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-
 SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-replace-in-production")
 DEBUG      = os.getenv("DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "*").split(",")
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
 
 AUTH_USER_MODEL = "config.User"
 
@@ -49,7 +48,8 @@ INSTALLED_APPS = [
 # ---------------------------------------------------------------------------
 
 MIDDLEWARE = [
-    "core.middleware.IPBlockMiddleware",          # ← block bad IPs immediately
+    "core.middleware.media_protection.MediaProtectionMiddleware",
+    "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
@@ -98,7 +98,7 @@ REST_FRAMEWORK = {
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ],
     "DEFAULT_PERMISSION_CLASSES": [
-        "core.permissions.PublicReadEditorWrite",
+        "core.permissions.PublicReadOnly",
     ],
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
@@ -108,17 +108,18 @@ REST_FRAMEWORK = {
     # Throttling — applied globally; sensitive endpoints add SensitiveAnonThrottle
     # ---------------------------------------------------------------------------
     "DEFAULT_THROTTLE_CLASSES": [
-        "core.throttles.AnonBurstThrottle",
-        "core.throttles.AnonSustainedThrottle",
-        "core.throttles.AuthBurstThrottle",
-        "core.throttles.AuthSustainedThrottle",
+        "core.throttles.annon.AnonPostThrottle",
+        "core.throttles.aa.AnonBurstThrottle",
+        "core.throttles.aa.AnonSustainedThrottle",
+        "core.throttles.aa.AuthBurstThrottle",
+        "core.throttles.aa.AuthSustainedThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon_burst":     "30/min",    # anonymous burst
-        "anon_sustained": "300/hour",  # anonymous hourly cap
-        "auth_burst":     "60/min",    # authenticated burst
-        "auth_sustained": "2000/hour", # authenticated hourly cap
-        "sensitive_anon": "5/hour",    # subscribe / contact forms
+        "anon_burst":     "30/min",   
+        "anon_sustained": "500/hour",  
+        "auth_burst":     "60/min",   
+        "auth_sustained": "2000/hour", 
+        "sensitive_anon": "5/hour",    
     },
 }
 
@@ -133,7 +134,7 @@ CACHES = {
     }
 }
 
-# Production Redis example:
+# Production 
 # CACHES = {
 #     "default": {
 #         "BACKEND":  "django.core.cache.backends.redis.RedisCache",
@@ -173,23 +174,23 @@ CORS_ALLOW_HEADERS = [
 # Database
 # ---------------------------------------------------------------------------
 
-DATABASES = {
-    "default": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME":   BASE_DIR / "db.sqlite3",
-    }
-}
-
 # DATABASES = {
 #     "default": {
-#         "ENGINE":   "django.db.backends.postgresql",
-#         "NAME":     os.getenv("DB_NAME"),
-#         "USER":     os.getenv("DB_USER"),
-#         "PASSWORD": os.getenv("DB_PASSWORD"),
-#         "HOST":     os.getenv("DB_HOST"),
-#         "PORT":     os.getenv("DB_PORT"),
+#         "ENGINE": "django.db.backends.sqlite3",
+#         "NAME":   BASE_DIR / "db.sqlite3",
 #     }
 # }
+
+DATABASES = {
+    "default": {
+        "ENGINE":   "django.db.backends.postgresql",
+        "NAME":     os.getenv("DB_NAME"),
+        "USER":     os.getenv("DB_USER"),
+        "PASSWORD": os.getenv("DB_PASSWORD"),
+        "HOST":     os.getenv("DB_HOST"),
+        "PORT":     os.getenv("DB_PORT"),
+    }
+}
 
 
 # ---------------------------------------------------------------------------
@@ -222,10 +223,6 @@ STATIC_URL  = "/static/"
 STATIC_ROOT = BASE_DIR / "static"
 
 
-# ---------------------------------------------------------------------------
-# Internationalisation
-# ---------------------------------------------------------------------------
-
 LANGUAGE_CODE = "en-us"
 TIME_ZONE     = "UTC"
 USE_I18N      = True
@@ -249,3 +246,22 @@ if not DEBUG:
     
     
     
+
+
+# ── Media ────────────────────────────────────────────────────────
+MEDIA_URL  = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
+ 
+# ── Allowed origins for media reads ──────────────────────────────
+# Requests whose Origin/Referer is NOT in this list are blocked (403).
+# # Defaults to ALLOWED_HOSTS when not set.
+
+MEDIA_ALLOWED_ORIGINS = [
+    "https://cema-africa.uonbi.ac.ke",
+    "https://web.cema.africa",
+    "http://web.cema.africa",
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+]
