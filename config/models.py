@@ -226,10 +226,6 @@ class TeamMember(models.Model):
         return self.name
 
 
-# ---------------------------------------------------------------------------
-# Fellowship
-# ---------------------------------------------------------------------------
-
 class Fellowship(CuidMixin, models.Model):
     id             = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     name           = models.CharField(max_length=255, db_index=True)  # free text OR auto-filled from team_member
@@ -324,11 +320,6 @@ class Internship(CuidMixin,models.Model):
             self.name = self.team_member.name
         super().save(*args, **kwargs)
 
-
-# ---------------------------------------------------------------------------
-# Publication
-# ---------------------------------------------------------------------------
-
 class Publication(CuidMixin, models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title = models.CharField(max_length=500, db_index=True)
@@ -364,9 +355,6 @@ class Publication(CuidMixin, models.Model):
 
 
 
-# ---------------------------------------------------------------------------
-# Seminar
-# ---------------------------------------------------------------------------
 
 class Seminar(CuidMixin, models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
@@ -401,10 +389,6 @@ class Seminar(CuidMixin, models.Model):
         return self.title
 
 
-# ---------------------------------------------------------------------------
-# Course
-# ---------------------------------------------------------------------------
-
 class Course(models.Model):
     title = models.CharField(max_length=500)
     description = models.TextField()
@@ -427,10 +411,6 @@ class Course(models.Model):
     def __str__(self):
         return self.title
 
-
-# ---------------------------------------------------------------------------
-# Training
-# --------------------------------------------------------------------------
 
 class Training(models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
@@ -514,9 +494,6 @@ class TrainingMedia(models.Model):
     def __str__(self):
         return f"{self.training.title} — {self.media_type}"
 
-# ---------------------------------------------------------------------------
-# News
-# ---------------------------------------------------------------------------
 
 class News(models.Model):
     title = models.CharField(max_length=500)
@@ -537,9 +514,6 @@ class News(models.Model):
         return self.title
 
 
-# ---------------------------------------------------------------------------
-# Report & Download
-# ---------------------------------------------------------------------------
 
 class Report(CuidMixin, models.Model):
     id             = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
@@ -580,10 +554,6 @@ class Download(models.Model):
     def __str__(self):
         return f"Download of {self.report_id} by {self.user_email}"
 
-
-# ---------------------------------------------------------------------------
-# Data Catalogue
-# ---------------------------------------------------------------------------
 
 class DataCatalogue(CuidMixin, models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
@@ -678,10 +648,6 @@ class Subscription(CuidMixin, models.Model):
         return self.email
 
 
-# ---------------------------------------------------------------------------
-# Contact Form
-# ---------------------------------------------------------------------------
-
 class ContactForm( models.Model):
     full_name  = models.CharField(max_length=255, db_column="fullName")
     email      = models.EmailField()
@@ -742,11 +708,6 @@ class RateLimit( models.Model):
     def __str__(self):
         return f"{self.ip_address} — {self.endpoint}"
 
-
-# ---------------------------------------------------------------------------
-# Blocked IP
-# ---------------------------------------------------------------------------
-
 class BlockedIP( models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
     reason     = models.CharField(max_length=500, blank=True)
@@ -757,9 +718,6 @@ class BlockedIP( models.Model):
 
     def __str__(self):
         return self.ip_address
-# ---------------------------------------------------------------------------
-# Audit Log
-# ---------------------------------------------------------------------------
 
 class AuditLog( models.Model):
     id = models.AutoField(primary_key=True)
@@ -795,9 +753,6 @@ class AuditLog( models.Model):
         return f"{self.action} on {self.resource} by {self.user_email}"
 
 
-# ---------------------------------------------------------------------------
-# System Log
-# ---------------------------------------------------------------------------
 
 class SystemLog( models.Model):
     id = models.AutoField(primary_key=True)

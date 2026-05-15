@@ -2,7 +2,7 @@ import logging
 
 from django.contrib.auth import get_user_model
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -10,6 +10,7 @@ from rest_framework_simplejwt.exceptions import TokenError
 from django.utils import timezone
 
 from core.permissions import IsAuthenticated
+from core.throttles.aa import SensitiveAnonThrottle
 
 
 
@@ -28,6 +29,7 @@ def _token_pair(user) -> dict:
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([SensitiveAnonThrottle])
 def login(request):
     """
     POST /api/auth/login/
@@ -81,11 +83,6 @@ def login(request):
         status=status.HTTP_200_OK,
     )
 
-
-# ---------------------------------------------------------------------------
-# Refresh
-# ---------------------------------------------------------------------------
-
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def refresh(request):
@@ -117,9 +114,6 @@ def refresh(request):
     return Response({"access": access, "refresh": new_refresh}, status=status.HTTP_200_OK)
 
 
-# ---------------------------------------------------------------------------
-# Logout
-# ---------------------------------------------------------------------------
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])

@@ -48,7 +48,7 @@ class IPBlockMiddleware:
 
 
 VIOLATION_KEY       = "throttle_violations:{ip}"
-VIOLATION_THRESHOLD = 5
+VIOLATION_THRESHOLD = 40
 VIOLATION_WINDOW    = 60 * 10  # 10 min
 
 

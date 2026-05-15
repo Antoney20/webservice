@@ -1,60 +1,6 @@
 """
-media_protection.py
---------------------
 Middleware that guards all files served under MEDIA_URL.
 
-Rules
-─────
-1.  Extension check (all requests)
-        Only known file types are allowed.  Anything else → 415.
-
-2.  GET / HEAD (public files — images, documents are readable)
-        The request MUST originate from an allowed origin / referer.
-        This prevents direct tab-open, hotlinking, and off-site embedding
-        while letting the frontend fetch freely.
-
-        Allowed origins come from settings.MEDIA_ALLOWED_ORIGINS, which
-        defaults to settings.ALLOWED_HOSTS.
-
-        How "same-site" is detected, in priority order:
-          a. Sec-Fetch-Site == "same-origin" | "same-site"  → allow
-          b. Sec-Fetch-Site == "none"                       → block (direct nav)
-          c. Origin header host in MEDIA_ALLOWED_ORIGINS    → allow / block
-          d. Referer header host in MEDIA_ALLOWED_ORIGINS   → allow / block
-          e. No header at all                               → block (new tab)
-
-3.  POST / PUT / PATCH / DELETE (write operations on /media/ paths)
-        A valid JWT is required.
-
-4.  All non-media paths pass through untouched.
-
-Response headers added to every allowed read
-────────────────────────────────────────────
-  Cache-Control: private, no-store
-  X-Content-Type-Options: nosniff
-  Content-Disposition: inline          (images, PDF)
-                        attachment     (office files, zip)
-
-Settings
-────────
-    # Hosts/origins allowed to fetch media (scheme optional).
-    # Defaults to ALLOWED_HOSTS when not set.
-    MEDIA_ALLOWED_ORIGINS = [
-        "https://yoursite.com",
-        "https://www.yoursite.com",
-        "http://localhost:3000",
-    ]
-
-    JWT_SECRET_KEY  = "..."           # defaults to SECRET_KEY
-    JWT_ALGORITHM   = "HS256"         # default
-    JWT_COOKIE_NAME = "access_token"  # default
-
-Middleware order (settings.py)
-──────────────────────────────
-    MIDDLEWARE = [
-        "core.middleware.media_protection.MediaProtectionMiddleware",
-        # ... rest of middleware
-    ]
 """
 
 from __future__ import annotations
@@ -71,10 +17,6 @@ import jwt
 logger = logging.getLogger(__name__)
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Allowed file extensions
-# ─────────────────────────────────────────────────────────────────────────────
-
 ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
     {
         # Images
@@ -83,7 +25,7 @@ ALLOWED_EXTENSIONS: frozenset[str] = frozenset(
         ".pdf", ".doc", ".docx",
         ".xls", ".xlsx",
         ".ppt", ".pptx",
-        ".csv", ".txt", ".zip",
+        ".csv", ".txt", 
     }
 )
 
@@ -99,9 +41,6 @@ READ_METHODS: frozenset[str] = frozenset({"GET", "HEAD", "OPTIONS"})
 WRITE_METHODS: frozenset[str] = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# Helpers
-# ─────────────────────────────────────────────────────────────────────────────
 
 def _json(message: str, status: int) -> JsonResponse:
     return JsonResponse({"success": False, "detail": message}, status=status)
@@ -176,10 +115,6 @@ def _is_same_site(request: HttpRequest) -> bool:
     return False
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# JWT helpers
-# ─────────────────────────────────────────────────────────────────────────────
-
 def _decode_token(token: str) -> dict | None:
     secret    = getattr(settings, "JWT_SECRET_KEY", settings.SECRET_KEY)
     algorithm = getattr(settings, "JWT_ALGORITHM",  "HS256")
@@ -227,7 +162,6 @@ class MediaProtectionMiddleware:
         media_url: str     = getattr(settings, "MEDIA_URL", "/media/")
         self.media_prefix  = "/" + media_url.strip("/")
 
-    # ─────────────────────────────────────────────────────────────────
 
     def __call__(self, request: HttpRequest):
         path   = request.path_info
@@ -237,7 +171,6 @@ class MediaProtectionMiddleware:
         if not path.startswith(self.media_prefix):
             return self.get_response(request)
 
-        # ── 1. Extension check (applies to every method) ──────────────
         ext = PurePosixPath(path).suffix.lower()
         if ext not in ALLOWED_EXTENSIONS:
             logger.warning(
@@ -248,7 +181,6 @@ class MediaProtectionMiddleware:
                 status=415,
             )
 
-        # ── 2a. READ — origin / referer guard (no auth token needed) ──
         if method in READ_METHODS:
             if not _is_same_site(request):
                 logger.info(
@@ -269,7 +201,6 @@ class MediaProtectionMiddleware:
             logger.debug("[media] Read allowed — %s", path)
             return response
 
-        # ── 2b. WRITE — JWT required ───────────────────────────────────
         if method in WRITE_METHODS:
             token = _extract_token(request)
             if not token:
@@ -287,10 +218,9 @@ class MediaProtectionMiddleware:
             )
             return self.get_response(request)
 
-        # ── Anything else ──────────────────────────────────────────────
+
         return _json("Method not allowed.", status=405)
 
-    # ─────────────────────────────────────────────────────────────────
 
     @staticmethod
     def _set_read_headers(response, ext: str, path: str) -> None:

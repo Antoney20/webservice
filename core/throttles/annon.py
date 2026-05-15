@@ -9,10 +9,10 @@ from core.middleware.tracking import get_client_ip, record_throttle_violation
 class AnonPostThrottle(BaseThrottle):
     """
     Limits anonymous POST requests per IP.
-    Example: 10 posts per 10 minutes
+    Example: 20 posts per 30 minutes per ip,, controls contact, subscribe
     """
 
-    RATE = 10
+    RATE = 20
     WINDOW = 60 * 30  
 
     def allow_request(self, request, view):

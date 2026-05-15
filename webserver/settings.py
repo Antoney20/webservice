@@ -17,10 +17,6 @@ ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
 AUTH_USER_MODEL = "config.User"
 
 
-# ---------------------------------------------------------------------------
-# Apps
-# ---------------------------------------------------------------------------
-
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -43,10 +39,6 @@ INSTALLED_APPS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Middleware  — IPBlockMiddleware is FIRST so blocked IPs never reach DRF
-# ---------------------------------------------------------------------------
-
 MIDDLEWARE = [
     "core.middleware.media_protection.MediaProtectionMiddleware",
     "core.middleware.tracking.IPBlockMiddleware",         
@@ -64,10 +56,6 @@ MIDDLEWARE = [
 ROOT_URLCONF = "webserver.urls"
 
 
-# ---------------------------------------------------------------------------
-# SimpleJWT
-# ---------------------------------------------------------------------------
-
 SIMPLE_JWT = {
     "ACCESS_TOKEN_LIFETIME":    timedelta(minutes=30),
     "REFRESH_TOKEN_LIFETIME":   timedelta(days=7),
@@ -82,9 +70,6 @@ SIMPLE_JWT = {
 }
 
 
-# ---------------------------------------------------------------------------
-# DRF
-# ---------------------------------------------------------------------------
 
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
@@ -104,9 +89,7 @@ REST_FRAMEWORK = {
         "rest_framework.renderers.JSONRenderer",
         "rest_framework.renderers.BrowsableAPIRenderer",
     ],
-    # ---------------------------------------------------------------------------
-    # Throttling — applied globally; sensitive endpoints add SensitiveAnonThrottle
-    # ---------------------------------------------------------------------------
+
     "DEFAULT_THROTTLE_CLASSES": [
         "core.throttles.annon.AnonPostThrottle",
         "core.throttles.aa.AnonBurstThrottle",
@@ -115,18 +98,15 @@ REST_FRAMEWORK = {
         "core.throttles.aa.AuthSustainedThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon_burst":     "30/min",   
+        "anon_burst":     "40/min",   
         "anon_sustained": "500/hour",  
-        "auth_burst":     "60/min",   
-        "auth_sustained": "2000/hour", 
-        "sensitive_anon": "5/hour",    
+        "auth_burst":     "200/min",   
+        "auth_sustained": "20000/hour", 
+        "sensitive_anon": "20/hour",    
     },
 }
 
 
-# ---------------------------------------------------------------------------
-# Cache — required by DRF throttling.  Use Redis in production.
-# ---------------------------------------------------------------------------
 
 CACHES = {
     "default": {
@@ -142,10 +122,6 @@ CACHES = {
 #     }
 # }
 
-
-# ---------------------------------------------------------------------------
-# CORS
-# ---------------------------------------------------------------------------
 
 CORS_ORIGIN_ALLOW_ALL  = False
 CORS_ALLOW_CREDENTIALS = True
@@ -170,10 +146,6 @@ CORS_ALLOW_HEADERS = [
 ]
 
 
-# ---------------------------------------------------------------------------
-# Database
-# ---------------------------------------------------------------------------
-
 # DATABASES = {
 #     "default": {
 #         "ENGINE": "django.db.backends.sqlite3",
@@ -193,10 +165,6 @@ DATABASES = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Templates
-# ---------------------------------------------------------------------------
-
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
@@ -215,10 +183,6 @@ TEMPLATES = [
 WSGI_APPLICATION = "webserver.wsgi.application"
 
 
-# ---------------------------------------------------------------------------
-# Static
-# ---------------------------------------------------------------------------
-
 STATIC_URL  = "/static/"
 STATIC_ROOT = BASE_DIR / "static"
 
@@ -230,10 +194,6 @@ USE_TZ        = True
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-
-# ---------------------------------------------------------------------------
-# Security (production)
-# ---------------------------------------------------------------------------
 
 if not DEBUG:
     SECURE_SSL_REDIRECT            = True

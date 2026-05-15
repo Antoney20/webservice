@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 ALLOWED_EXTENSIONS = {
     ".pdf", ".doc", ".docx", ".xls", ".xlsx",
-    ".ppt", ".pptx", ".csv", ".txt", ".zip",
+    ".ppt", ".pptx", ".csv", ".txt", 
     ".png", ".jpg", ".jpeg", ".gif", ".webp",
     ".mp4", ".mp3", 
 }
@@ -21,7 +21,7 @@ BLOCKED_EXTENSIONS = {
     ".reg", ".dll", ".sys", ".bin", ".iso",
 }
 
-MAX_FILE_SIZE = 60 * 1024 * 1024  
+MAX_FILE_SIZE = 60 * 1024 * 1024   #60mbs
 
 
 def validate_file(file, request=None):
@@ -33,20 +33,18 @@ def validate_file(file, request=None):
     ext       = os.path.splitext(name)[1]
     file_size = file.size
 
-    # Block dangerous extensions immediately — ban the IP
+
     if ext in BLOCKED_EXTENSIONS:
         ip = get_client_ip(request) if request else "unknown"
         logger.warning("Blocked file upload attempt: ext=%s ip=%s file=%s", ext, ip, file.name)
         if request:
             record_throttle_violation(ip)
-            # Force immediate ban for malicious uploads
             for _ in range(10):
                 record_throttle_violation(ip)
         raise ValidationError(
             f"File type '{ext}' is not allowed. Potentially dangerous file rejected."
         )
 
-    # Check allowed list
     if ext not in ALLOWED_EXTENSIONS:
         raise ValidationError(
             f"File type '{ext}' is not supported. "

@@ -16,7 +16,8 @@ help:
 	@echo "  $(GREEN)superuser$(RESET)        - Create superuser"
 	@echo "  $(GREEN)shell$(RESET)            - Django shell_plus (with IPython + SQL print)"
 	@echo "  $(GREEN)db-shell$(RESET)         - Open PostgreSQL shell"
-	@echo "  $(GREEN)test$(RESET)             - Run tests"
+	@echo "  $(GREEN)test$(RESET)             - Run all tests"
+	@echo "  $(GREEN)test {name}$(RESET)      - Run a specific test module  e.g. make test test_login"
 	@echo "  $(GREEN)cov$(RESET)              - Run tests with coverage report"
 	@echo "  $(GREEN)format$(RESET)           - Format code (black + isort)"
 	@echo "  $(GREEN)lint$(RESET)             - Run flake8 + mypy"
@@ -55,20 +56,31 @@ app:
 	fi
 	poetry run python manage.py startapp $(filter-out $@,$(MAKECMDGOALS))
 
-
 shell:
 	poetry run python manage.py shell_plus --print-sql
 
 db-shell:
 	poetry run python manage.py dbshell
 
+# ── tests, make test -- name -- 
+# Usage:
+#   make test                  → run all tests
+
+TEST_NAME := $(filter-out test,$(MAKECMDGOALS))
+
 test:
-	poetry run pytest
+	@if [ -n "$(TEST_NAME)" ]; then \
+		echo "$(YELLOW)Running test module: tests.$(TEST_NAME)$(RESET)"; \
+		poetry run python manage.py test tests.$(TEST_NAME) --verbosity=2; \
+	else \
+		echo "$(YELLOW)Running all tests...$(RESET)"; \
+		poetry run pytest; \
+	fi
 
 cov:
 	poetry run pytest --cov=. --cov-report=term-missing --cov-report=html
 
-# Versioning & Release - sematic releases
+
 version-check:
 	@echo "Checking next version (dry-run)..."
 	poetry run semantic-release version --print
@@ -81,15 +93,14 @@ changelog:
 	poetry run semantic-release changelog
 
 release:
-	@echo "Creating new release..."
+	@echo "$(YELLOW)Creating new release...$(RESET)"
 	poetry run semantic-release version
 	@echo ""
-	@echo "Release created! Push to GitHub with:"
+	@echo "$(GREEN)Release created! Push to GitHub with:$(RESET)"
 	@echo "  git push --follow-tags origin main"
 
 publish:
 	poetry run semantic-release publish
-
 
 
 format:
@@ -102,6 +113,7 @@ lint:
 	@echo "$(YELLOW)Running mypy...$(RESET)"
 	poetry run mypy .
 
+
 clean:
 	find . -type f -name "*.pyc" -delete
 	find . -type d -name "__pycache__" -delete
@@ -109,6 +121,6 @@ clean:
 	find . -type d -name ".mypy_cache" -exec rm -rf {} +
 	rm -rf htmlcov .coverage
 
-# Allow arguments after commands like `make mm core` or `make migrate auth`
+# Allow arguments after targets e.g. `make mm core`, `make migrate auth`, `make test test_login`
 %:
 	@:

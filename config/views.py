@@ -976,10 +976,6 @@ class TrainingMediaViewSet(viewsets.ModelViewSet):
         instance.delete()
         return ok(message="Media deleted.")
 
-# ---------------------------------------------------------------------------
-# News
-# ---------------------------------------------------------------------------
-
 class NewsViewSet(viewsets.ModelViewSet):
     queryset = News.objects.all()
     serializer_class = NewsSerializer
@@ -1005,9 +1001,6 @@ class NewsViewSet(viewsets.ModelViewSet):
         return ok_created()
 
 
-# ---------------------------------------------------------------------------
-# Reports & Downloads
-# ---------------------------------------------------------------------------
 class ReportViewSet(viewsets.ModelViewSet):
     queryset           = Report.objects.select_related("created_by").annotate(
                              download_count=Count("downloads")
@@ -1224,9 +1217,6 @@ class DataCatalogueViewViewSet(viewsets.ModelViewSet):
         self.get_object().delete()
         return ok()
 
-# ---------------------------------------------------------------------------
-# Policy Briefs
-# ---------------------------------------------------------------------------
 
 class PolicyBriefViewSet(viewsets.ModelViewSet):
     queryset = PolicyBrief.objects.all()
@@ -1344,10 +1334,6 @@ class CareerViewSet(viewsets.ModelViewSet):
         instance.delete()
         invalidate_career(pk=pk)
         return ok(message="Career deleted.")
-
-# ---------------------------------------------------------------------------
-# Admin-only
-# ---------------------------------------------------------------------------
 
 class RateLimitViewSet(viewsets.ModelViewSet):
     queryset = RateLimit.objects.all()
