@@ -1,4 +1,8 @@
+from datetime import timedelta
+from django.db import transaction
+from django.utils import timezone
 import json
+import secrets
 
 from rest_framework import serializers
 from django.db import IntegrityError
@@ -7,7 +11,7 @@ from rest_framework.response import Response
 from core.validators.email import validate_email_address
 from core.validators.file import validate_file
 from .models import (
-    Career, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, Invitation, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
@@ -55,6 +59,68 @@ class UserSerializer(serializers.ModelSerializer):
             instance.set_password(password)
         instance.save()
         return instance
+
+
+
+
+
+class InviteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Invitation
+        fields = ["id", "email", "role", "accepted", "invite_expires_at", "created_at"]
+        read_only_fields = ["id", "accepted", "invite_expires_at", "created_at"]
+        extra_kwargs = {"role": {"required": False}}
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email=value).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        if Invitation.objects.filter(email=value, accepted=False).exists():
+            raise serializers.ValidationError("A pending invitation already exists for this email.")
+        return value
+
+    def create(self, validated_data):
+        return Invitation.objects.create(
+            token=secrets.token_urlsafe(48),
+            invite_expires_at=timezone.now() + timedelta(days=30),
+            invited_by=self.context["request"].user,
+            **validated_data,
+        )
+
+
+class AcceptInviteSerializer(serializers.Serializer):
+    token    = serializers.CharField()
+    name     = serializers.CharField(max_length=255)
+    password = serializers.CharField(write_only=True, min_length=8)
+
+    def validate_token(self, value):
+        try:
+            inv = Invitation.objects.get(token=value, accepted=False)
+        except Invitation.DoesNotExist:
+            raise serializers.ValidationError("Invalid or already-used invitation.")
+        if inv.invite_expires_at and inv.invite_expires_at < timezone.now():
+            raise serializers.ValidationError("This invitation has expired.")
+        self.invitation = inv
+        return value
+
+    @transaction.atomic
+    def create(self, validated_data):
+        inv = Invitation.objects.select_for_update().get(pk=self.invitation.pk)
+        if inv.accepted:
+            raise serializers.ValidationError("This invitation has already been accepted.")
+        if User.objects.filter(email=inv.email).exists():
+            raise serializers.ValidationError({"email": "An account with this email already exists."})
+
+        user = User.objects.create_user(
+            email=inv.email,
+            name=validated_data["name"],
+            password=validated_data["password"],
+            role=inv.role,
+            is_active=True,
+        )
+        inv.accepted = True
+        inv.save(update_fields=["accepted"])
+        return user
 
 class ContentSectionSerializer(serializers.ModelSerializer):
     id    = serializers.UUIDField(read_only=True)

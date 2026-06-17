@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SECRET_KEY = os.getenv("SECRET_KEY", "django-insecure-replace-in-production")
+SECRET_KEY = os.getenv("SECRET_KEY", "djan@RTR#TYT$#T#$$YG$F##WFDCFCFC@QRD#ETYHG^%$%RFVDSVCVCVCFCEDSX")
 DEBUG      = os.getenv("DEBUG", "True") == "True"
 ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
 
@@ -40,7 +40,7 @@ INSTALLED_APPS = [
 
 
 MIDDLEWARE = [
-    "core.middleware.media_protection.MediaProtectionMiddleware",
+    # "core.middleware.media_protection.MediaProtectionMiddleware",
     "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
@@ -168,7 +168,7 @@ DATABASES = {
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS":    [BASE_DIR / "templates"],
+        'DIRS': [BASE_DIR / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
@@ -206,15 +206,22 @@ if not DEBUG:
     
     
     
+import os
+
+EMAIL_BACKEND       = os.getenv("EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+EMAIL_HOST          = os.getenv("EMAIL_HOST")
+EMAIL_PORT          = int(os.getenv("EMAIL_PORT", 587))
+EMAIL_USE_TLS       = os.getenv("EMAIL_USE_TLS", "True").lower() == "true"
+EMAIL_HOST_USER     = os.getenv("EMAIL_HOST_USER")
+EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
+
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://cema-africa.uonbi.ac.ke")
 
 
-# ── Media ────────────────────────────────────────────────────────
 MEDIA_URL  = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
  
-# ── Allowed origins for media reads ──────────────────────────────
-# Requests whose Origin/Referer is NOT in this list are blocked (403).
-# # Defaults to ALLOWED_HOSTS when not set.
+
 
 MEDIA_ALLOWED_ORIGINS = [
     "https://cema-africa.uonbi.ac.ke",

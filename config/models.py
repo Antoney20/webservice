@@ -120,8 +120,23 @@ class User(AbstractBaseUser, PermissionsMixin ,CuidMixin):
 
     @property
     def is_editor_or_above(self) -> bool:
-        # Extend this if you add an EDITOR role later
         return self.role in (UserRole.ADMIN,)
+
+
+
+
+class Invitation(CuidMixin, models.Model):
+    id                = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
+    email             = models.EmailField(db_index=True)
+    role              = models.CharField(max_length=20, choices=UserRole.choices, default=UserRole.USER)
+    token             = models.CharField(max_length=255, unique=True)
+    invited_by        = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name="invitations")
+    accepted          = models.BooleanField(default=False)
+    invite_expires_at = models.DateTimeField(null=True, blank=True)
+    created_at        = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "user_invitations"
 
 
 class Content(CuidMixin, models.Model):

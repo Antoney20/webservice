@@ -1,7 +1,13 @@
 import json
+import logging
 import uuid
 
-from rest_framework import viewsets
+from django.conf import settings
+from rest_framework import viewsets, permissions, status
+from rest_framework.decorators import action
+from django.utils import timezone
+
+from rest_framework import serializers, viewsets
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound
@@ -36,19 +42,21 @@ from core.caches.careers import (
 )
 
 
+logger = logging.getLogger(__name__)
+
 from core.middleware.tracking import get_client_ip
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
 from django.db.models import Count, Sum
 
 from .models import (
-    Career, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, Invitation, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
     AuditLog, SystemLog,
 )
 from .serializers import (
-    CareerSerializer, ContentListSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    AcceptInviteSerializer, CareerSerializer, ContentListSerializer, InviteSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -138,6 +146,106 @@ class UserViewSet(viewsets.ModelViewSet):
             return fail(message="You cannot delete your own account.")
         instance.delete()
         return ok(message="User deleted.")
+
+
+
+
+
+class InvitationViewSet(viewsets.ModelViewSet):
+    queryset           = Invitation.objects.all().order_by("-created_at")
+    serializer_class   = InviteSerializer
+    permission_classes = [RequiresAdmin]
+    filterset_fields   = ["role", "accepted"]
+    search_fields      = ["email"]
+    ordering_fields    = ["email", "created_at"]
+    ordering           = ["-created_at"]
+
+    def _link(self, invitation):
+        return f"{settings.FRONTEND_URL}/auth/accept-invite/{invitation.token}/"
+
+    def list(self, request, *args, **kwargs):
+        qs   = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(qs)
+        serializer = self.get_serializer(page if page is not None else qs, many=True)
+        if page is not None:
+            return ok(data=self.get_paginated_response(serializer.data).data)
+        return ok(data=serializer.data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=self.get_serializer(self.get_object()).data)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        invitation = serializer.save()
+
+        link = self._link(invitation)
+        try:
+            send_invite_email(invitation, link, invited_by=request.user)
+        except Exception as exc:
+            logger.exception("Invite email failed", exc_info=exc)
+
+        return ok(data={
+            "id": invitation.id,
+            "email": invitation.email,
+            "role": invitation.role,
+            "invite_link": link,
+            "expires_at": invitation.invite_expires_at.isoformat() if invitation.invite_expires_at else None,
+        }, status_code=status.HTTP_201_CREATED)
+
+    def destroy(self, request, *args, **kwargs):
+        self.get_object().delete()
+        return ok()
+
+    # ---- token verification (public) ----
+    @action(detail=False, methods=["get"], url_path=r"verify/(?P<token>[^/.]+)",
+            permission_classes=[permissions.AllowAny])
+    def verify(self, request, token=None):
+        try:
+            inv = Invitation.objects.get(token=token, accepted=False)
+        except Invitation.DoesNotExist:
+            return fail(message="Invalid or already-used invitation link.",
+                        status_code=status.HTTP_404_NOT_FOUND)
+        if inv.invite_expires_at and inv.invite_expires_at < timezone.now():
+            return fail(message="This invitation link has expired.")
+        return ok(data={
+            "email": inv.email,
+            "role": inv.role,
+            "invited_by": inv.invited_by.name if inv.invited_by else None,
+        })
+
+    # ---- accept (public) ----
+    @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
+    def accept(self, request):
+        serializer = AcceptInviteSerializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        user = serializer.save()
+        return ok(data={"id": user.id, "email": user.email})
+
+    # ---- resend (admin) ----
+    @action(detail=True, methods=["post"])
+    def resend(self, request, pk=None):
+        inv = self.get_object()
+        if inv.accepted:
+            return fail(message="This invitation has already been accepted.")
+
+        if inv.invite_expires_at and inv.invite_expires_at < timezone.now():
+            inv.token = secrets.token_urlsafe(48)
+            inv.invite_expires_at = timezone.now() + timedelta(days=30)
+            inv.save(update_fields=["token", "invite_expires_at"])
+
+        link = self._link(inv)
+        try:
+            send_invite_email(inv, link, invited_by=request.user)
+        except Exception as exc:
+            logger.exception("Resend invite email failed", exc_info=exc)
+            return fail(message="Failed to send invitation email. Please try again later.",
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return ok(data={"id": inv.id, "email": inv.email, "invite_link": link})
+
 
 class ContentViewSet(viewsets.ModelViewSet):
     queryset           = Content.objects.all()
