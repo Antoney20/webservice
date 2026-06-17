@@ -12,7 +12,9 @@ load_dotenv()
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv("SECRET_KEY", "djan@RTR#TYT$#T#$$YG$F##WFDCFCFC@QRD#ETYHG^%$%RFVDSVCVCVCFCEDSX")
 DEBUG      = os.getenv("DEBUG", "True") == "True"
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
+#ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS").split(",")
+ALLOWED_HOSTS = [".cema.africa","webservice.cema.africa", "localhost", "127.0.0.1"]
+
 
 AUTH_USER_MODEL = "config.User"
 

@@ -136,3 +136,23 @@ docker-compose.override.yml
 commit-ai.sh
 
 /media/images/team/*
+
+
+
+# Media files (ignore everything)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.webp
+*.pdf
+
+# Django media folder
+media/
+uploads/
+
+# optional: compiled/static junk
+__pycache__/
+*.pyc
+
