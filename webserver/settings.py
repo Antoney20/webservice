@@ -133,6 +133,8 @@ CORS_ALLOWED_ORIGINS = [
     "https://localhost:3000",
     "https://web.cema.africa",
     "http://web.cema.africa",
+    "https://cema-africa.uonbi.ac.ke",
+    "http://cema-africa.uonbi.ac.ke",
 ]
 
 CORS_ALLOW_HEADERS = [
