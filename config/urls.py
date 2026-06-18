@@ -5,6 +5,7 @@ from . import views
 router = DefaultRouter()
 
 router.register(r'users',               views.UserViewSet,              basename='user')
+router.register(r"invitations",    views.InvitationViewSet, basename="invitation")
 router.register(r'content',             views.ContentViewSet,           basename='content')
 router.register(r'content-sections',    views.ContentSectionViewSet,    basename='content-section')
 router.register(r'team-members',        views.TeamMemberViewSet,        basename='team-member')

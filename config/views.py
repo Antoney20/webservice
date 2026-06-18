@@ -41,6 +41,7 @@ from core.caches.careers import (
     invalidate_career,
 )
 
+from core.emails.send_invite import send_invite_email
 
 logger = logging.getLogger(__name__)
 
