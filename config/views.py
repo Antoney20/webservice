@@ -67,10 +67,12 @@ from .serializers import (
 )
 
 
-def ok(data=None, status_code=status.HTTP_200_OK):
+def ok(data=None, message=None, status_code=status.HTTP_200_OK):
     body = {"success": True}
     if data is not None:
         body["data"] = data
+    if message:
+        body["message"] = message
     return Response(body, status=status_code)
 
 
