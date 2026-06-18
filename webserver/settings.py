@@ -184,9 +184,12 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "webserver.wsgi.application"
 
-
 STATIC_URL  = "/static/"
 STATIC_ROOT = BASE_DIR / "static"
+
+MEDIA_ROOT = BASE_DIR / "media"
+# MEDIA_URL = os.environ.get("MEDIA_URL", "/media/") 
+MEDIA_URL = 'https://webservice.cema.africa/media/'
 
 
 LANGUAGE_CODE = "en-us"
@@ -219,10 +222,6 @@ EMAIL_HOST_PASSWORD = os.getenv("EMAIL_HOST_PASSWORD")
 
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://cema-africa.uonbi.ac.ke")
 
-
-MEDIA_URL  = "/media/"
-MEDIA_ROOT = BASE_DIR / "media"
- 
 
 
 MEDIA_ALLOWED_ORIGINS = [
