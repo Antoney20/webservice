@@ -34,3 +34,29 @@ def send_invite_email(invitation, invite_link, invited_by=None):
     except (SMTPException, Exception) as exc:
         logger.error("Failed to send invite email to %s: %s", recipient, exc, exc_info=True)
         return False
+    
+    
+def send_invite_success_email(user):
+    """Send a welcome email after an invitation is accepted."""
+    recipient  = user.email
+    from_email = settings.EMAIL_HOST_USER
+    subject    = "CEMA Web Service — Your account is ready"
+
+    login_url = f"{settings.FRONTEND_URL}/auth/login"
+
+    html_content = render_to_string("invite/accepted.html", {
+        "user_name":     user.name or recipient.split("@")[0],
+        "login_url":     login_url,
+        "support_email": from_email,
+        "current_year":  timezone.now().year,
+    })
+
+    try:
+        email = EmailMultiAlternatives(subject=subject, body="", from_email=from_email, to=[recipient])
+        email.attach_alternative(html_content, "text/html")
+        email.send(fail_silently=False)
+        logger.info("Welcome email sent to %s", recipient)
+        return True
+    except (SMTPException, Exception) as exc:
+        logger.error("Failed to send welcome email to %s: %s", recipient, exc, exc_info=True)
+        return False

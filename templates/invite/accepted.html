@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CEMA Web Service — Account Invitation</title>
+  <title>CEMA Web Service — Account Ready</title>
 </head>
 <body style="margin:0;padding:0;background:#f3f4f6;font-family:Arial,Helvetica,sans-serif;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f3f4f6;padding:32px 16px;">
@@ -12,46 +12,39 @@
              style="max-width:600px;width:100%;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,0.08);">
 
         <tr><td style="background:#27aae1;padding:28px 32px;">
-          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">CEMA Web Service</h1>
-          <p style="margin:4px 0 0;color:#e6f6fd;font-size:13px;">Account Invitation</p>
+          <h1 style="margin:0;color:#ffffff;font-size:20px;font-weight:bold;">CEMA Web - master</h1>
+          <p style="margin:4px 0 0;color:#e6f6fd;font-size:13px;">Account activated</p>
         </td></tr>
 
         <tr><td style="padding:32px;">
           <p style="margin:0 0 16px;color:#111827;font-size:16px;">Hello {{ user_name }},</p>
           <p style="margin:0 0 16px;color:#374151;font-size:15px;line-height:1.6;">
-            {% if invited_by %}{{ invited_by }} has invited you{% else %}You have been invited{% endif %}
-            to create a CEMA Web-masters account</strong>.
+            Your account is all set. You can now sign in and start using the CEMA Website dashboard.
           </p>
           <p style="margin:0 0 24px;color:#374151;font-size:15px;line-height:1.6;">
-            Click the button below to set your password and activate your account.
+            Click the button below to return to the sign-in page.
           </p>
 
           <table role="presentation" cellpadding="0" cellspacing="0" style="margin:0 0 24px;">
             <tr><td style="border-radius:8px;background:#27aae1;">
-              <a href="{{ invite_link }}"
+              <a href="{{ login_url }}"
                  style="display:inline-block;padding:13px 28px;color:#ffffff;font-size:15px;font-weight:bold;text-decoration:none;">
-                Accept Invitation
+                Go to Sign In
               </a>
             </td></tr>
           </table>
-
-          {% if expires_at %}
-          <p style="margin:0 0 16px;color:#6b7280;font-size:13px;line-height:1.6;">
-            This invitation expires on {{ expires_at|date:"F j, Y" }}. 
-          </p>
-          {% endif %}
 
           <p style="margin:0 0 8px;color:#6b7280;font-size:13px;line-height:1.6;">
             If the button doesn't work, paste this link into your browser:
           </p>
           <p style="margin:0;font-size:13px;word-break:break-all;">
-            <a href="{{ invite_link }}" style="color:#27aae1;">{{ invite_link }}</a>
+            <a href="{{ login_url }}" style="color:#27aae1;">{{ login_url }}</a>
           </p>
         </td></tr>
 
         <tr><td style="padding:20px 32px;background:#f9fafb;border-top:1px solid #eef0f2;">
           <p style="margin:0 0 4px;color:#9ca3af;font-size:12px;line-height:1.6;">
-            Didn't expect this? You can ignore this email, or reach us at
+            Need help? Reach us at
             <a href="mailto:{{ support_email }}" style="color:#27aae1;">{{ support_email }}</a>.
           </p>
           <p style="margin:0;color:#9ca3af;font-size:12px;">© {{ current_year }} CEMA. All rights reserved.</p>

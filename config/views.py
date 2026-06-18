@@ -41,7 +41,7 @@ from core.caches.careers import (
     invalidate_career,
 )
 
-from core.emails.send_invite import send_invite_email
+from core.emails.send_invite import send_invite_email, send_invite_success_email
 
 logger = logging.getLogger(__name__)
 
@@ -143,10 +143,17 @@ class UserViewSet(viewsets.ModelViewSet):
         return ok(data=serializer.data)
 
     def destroy(self, request, *args, **kwargs):
+        if not request.user.is_superuser:
+            return fail(
+                message="not allowed to perform this action",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+
         instance = self.get_object()
         # Prevent deleting yourself
         if instance.pk == request.user.pk:
             return fail(message="You cannot delete your own account.")
+
         instance.delete()
         return ok(message="User deleted.")
 
@@ -219,12 +226,26 @@ class InvitationViewSet(viewsets.ModelViewSet):
         })
 
     # ---- accept (public) ----
+    # @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
+    # def accept(self, request):
+    #     serializer = AcceptInviteSerializer(data=request.data)
+    #     if not serializer.is_valid():
+    #         return fail(errors=serializer.errors)
+    #     user = serializer.save()
+    #     return ok(data={"id": user.id, "email": user.email})
+    
     @action(detail=False, methods=["post"], permission_classes=[permissions.AllowAny])
     def accept(self, request):
         serializer = AcceptInviteSerializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         user = serializer.save()
+
+        try:
+            send_invite_success_email(user)
+        except Exception as exc:
+            logger.exception("Welcome email failed", exc_info=exc)
+
         return ok(data={"id": user.id, "email": user.email})
 
     # ---- resend (admin) ----
