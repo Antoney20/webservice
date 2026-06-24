@@ -5,14 +5,16 @@ from django.db.models.functions import Coalesce, ExtractYear
 
 from django.conf import settings
 from rest_framework import viewsets, permissions, status
+from django.db import transaction
 from rest_framework.decorators import action
 from django.utils import timezone
-
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework import serializers, viewsets
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.exceptions import NotFound
 from django.db import IntegrityError
+from rest_framework.permissions import AllowAny
 from core.caches.content import  get_content_list, set_content_list, invalidate_content_list, get_content_item, set_content_item, invalidate_content_item, invalidate_content
 from core.caches.seminars import get_seminar_item, set_seminar_item, get_seminar_list, invalidate_seminar, set_seminar_list
 from core.caches.internships import (
@@ -43,6 +45,7 @@ from core.caches.careers import (
 )
 
 from core.emails.send_invite import send_invite_email, send_invite_success_email
+from core.services.images import SiteImageService
 
 logger = logging.getLogger(__name__)
 
@@ -51,14 +54,14 @@ from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicR
 from django.db.models import F, Count, Sum
 
 from .models import (
-    Career, Invitation, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, ContentStatus, Invitation, SiteImage, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
     AuditLog, SystemLog,
 )
 from .serializers import (
-    AcceptInviteSerializer, CareerSerializer, ContentListSerializer, InviteSerializer, PublicationListSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
+    AcceptInviteSerializer, CareerSerializer, ContentListSerializer, InviteSerializer, PublicationListSerializer, SiteImageSerializer, TeamMemberListSerializer, TrainingListSerializer, TrainingMediaSerializer, TrainingSectionSerializer, UserSerializer, ContentSerializer, ContentSectionSerializer,
     TeamMemberSerializer, FellowshipSerializer, InternshipSerializer,
     PublicationSerializer, SeminarSerializer, CourseSerializer,
     TrainingSerializer, NewsSerializer, ReportSerializer,
@@ -272,139 +275,145 @@ class InvitationViewSet(viewsets.ModelViewSet):
         return ok(data={"id": inv.id, "email": inv.email, "invite_link": link})
 
 
+
+
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Content
+# ──────────────────────────────────────────────────────────────────────────
+
+ 
 class ContentViewSet(viewsets.ModelViewSet):
-    queryset           = Content.objects.all()
-    permission_classes = [EditorWrite]
-    filterset_fields   = ["type", "status", "featured", "category"]
-    search_fields      = ["title", "excerpt"]
-    ordering_fields    = ["date", "published_at", "created_at"]
-    ordering           = ["-created_at"]
-
-    def get_object(self):
-        pk = self.kwargs.get("pk")
-        try:
-            obj = self.get_queryset().get(pk=pk)
-        except Content.DoesNotExist:
-            raise NotFound()
-        self.check_object_permissions(self.request, obj)
-        return obj
-
+    """
+    Public read, editor write. Sections are managed inline:
+      sections          -> JSON array [{ id?, title, body, order, image_alt, image }]
+                           image flag is "__keep__" (leave stored file) or null (clear)
+      section_image_{i} -> raw binary File for the section at index i (new uploads only)
+    Files are written to the media server; the DB stores the path only.
+    """
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    queryset = (
+        Content.objects
+        .select_related("created_by")
+        .prefetch_related("sections")
+        .order_by("-created_at")        # latest first
+    )
+ 
+    def get_permissions(self):
+        return [AllowAny()] if self.action in ("list", "retrieve") else [EditorWrite()]
+ 
     def get_serializer_class(self):
-        if self.action == "list":
-            return ContentListSerializer
-        return ContentSerializer
-
-    def get_queryset(self):
-        qs = super().get_queryset()
-        if self.action != "list":
-            qs = qs.prefetch_related("sections")
-        return qs
-
-    def _parse_sections(self):
-        sections_data = self.request.data.get("sections", [])
-        if isinstance(sections_data, str):
-            try:
-                sections_data = json.loads(sections_data)
-            except (json.JSONDecodeError, ValueError):
-                sections_data = []
-        return sections_data if isinstance(sections_data, list) else []
-
-    def _save_sections(self, instance, sections_data):
-        instance.sections.all().delete()
-        for section in sections_data:
-            if not section.get("body", "").strip():
-                continue
-            ContentSection.objects.create(
-                content=instance,
-                title=section.get("title") or None,
-                body=section.get("body", ""),
-                order=section.get("order", 0),
-                image_alt=section.get("image_alt") or None,
-            )
-
-    # ── List ──────────────────────────────────────────────────────────────
-
+        return ContentListSerializer if self.action == "list" else ContentSerializer
+ 
+    # ── read (cached) ───────────────────────────────────────────────────
     def list(self, request, *args, **kwargs):
-        cached = get_content_list()
-        if cached is not None:
-            return ok(data=cached)
-        qs         = self.filter_queryset(self.get_queryset())
-        page       = self.paginate_queryset(qs)
-        serializer = self.get_serializer(page if page is not None else qs, many=True)
-        data       = self.get_paginated_response(serializer.data).data if page is not None else serializer.data
-        set_content_list(data)
+        data = get_content_list()
+        if data is None:
+            rows = self.get_serializer(self.get_queryset(), many=True).data
+            data = {"count": len(rows), "next": None, "previous": None, "results": rows}
+            set_content_list(data)
         return ok(data=data)
-
-    # ── Retrieve ──────────────────────────────────────────────────────────
-
+ 
     def retrieve(self, request, *args, **kwargs):
-        pk     = self.kwargs.get("pk")
-        cached = get_content_item(pk)
-        if cached is not None:
-            return ok(data=cached)
-        instance   = self.get_object()
-        serializer = self.get_serializer(instance)
-        data       = serializer.data
-        set_content_item(pk, data)
+        pk = kwargs["pk"]
+        data = get_content_item(pk)
+        if data is None:
+            data = self.get_serializer(self.get_object()).data
+            set_content_item(pk, data)
         return ok(data=data)
-
+ 
+    # ── write (invalidates cache) ───────────────────────────────────────
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-        try:
-            instance = serializer.save(created_by=request.user)
-            self._save_sections(instance, self._parse_sections())
-            invalidate_content()
-        except IntegrityError as e:
-            return fail(message="Failed to create content.")
-        except Exception as e:
-            return fail(message=str(e))
-        # Return fresh instance with sections
-        out = self.get_serializer(
-            Content.objects.prefetch_related("sections").get(pk=instance.pk)
-        )
-        return ok(data=out.data)
-
-
+        with transaction.atomic():
+            content = serializer.save(created_by=request.user)
+            self._publish(content)
+            self._save_sections(content)
+        invalidate_content()
+        return ok_created()
+ 
     def update(self, request, *args, **kwargs):
-        partial    = kwargs.pop("partial", False)
-        instance   = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        partial = kwargs.pop("partial", False)
+        content = self.get_object()
+        serializer = self.get_serializer(content, data=request.data, partial=partial)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
-        try:
-            instance = serializer.save()
-            self._save_sections(instance, self._parse_sections())
-            invalidate_content(pk=str(instance.pk))
-        except IntegrityError:
-            return fail(message="Failed to update content.")
-        except Exception as e:
-            return fail(message=str(e))
-        # Return fresh instance with sections
-        out = self.get_serializer(
-            Content.objects.prefetch_related("sections").get(pk=instance.pk)
-        )
-        return ok(data=out.data)
-
-
+        with transaction.atomic():
+            content = serializer.save()
+            if str(request.data.get("removeImage", "")).lower() == "true" and content.image:
+                content.image.delete(save=False)
+                content.image = None
+                content.save(update_fields=["image"])
+            self._publish(content)
+            self._save_sections(content)
+        invalidate_content(pk=str(content.pk))
+        return ok(data=self.get_serializer(content).data)
+ 
     def destroy(self, request, *args, **kwargs):
-        instance = self.get_object()
-        pk       = instance.pk
-        instance.delete()
+        content = self.get_object()
+        pk = str(content.pk)
+        content.delete()
         invalidate_content(pk=pk)
         return ok()
+ 
+    # ── helpers ─────────────────────────────────────────────────────────
+    def _publish(self, content):
+        if content.status == ContentStatus.PUBLISHED and content.published_at is None:
+            content.published_at = timezone.now()
+            content.save(update_fields=["published_at"])
+ 
+    def _save_sections(self, content):
+        raw = self.request.data.get("sections")
+        if raw is None:
+            return
+        try:
+            payload = json.loads(raw) if isinstance(raw, str) else raw
+        except (TypeError, ValueError):
+            return
+        if not isinstance(payload, list):
+            return
+ 
+        existing = {s.id: s for s in content.sections.all()}
+        keep = set()
+        for i, sec in enumerate(payload):
+            obj = existing.get(sec.get("id")) or ContentSection(content=content)
+            obj.title     = sec.get("title") or None
+            obj.body      = sec.get("body", "")
+            obj.order     = sec.get("order", i)
+            obj.image_alt = sec.get("image_alt") or None
+ 
+            file = self.request.FILES.get(f"section_image_{i}")
+            if file is not None:                       # new binary upload
+                if obj.pk and obj.image:
+                    obj.image.delete(save=False)
+                obj.image = file
+            elif sec.get("image") is None:             # cleared / never set
+                if obj.pk and obj.image:
+                    obj.image.delete(save=False)
+                obj.image = None
+            # else "__keep__" -> leave the stored file untouched
+            obj.save()
+            keep.add(obj.id)
+ 
+        for stale in content.sections.exclude(id__in=keep):
+            if stale.image:
+                stale.image.delete(save=False)
+            stale.delete()
+ 
 
-# from config.models import Content
 class ContentSectionViewSet(viewsets.ModelViewSet):
     serializer_class   = ContentSectionSerializer
     permission_classes = [EditorWrite]
-
+    parser_classes     = [MultiPartParser, FormParser, JSONParser]
+ 
     def get_queryset(self):
         return ContentSection.objects.filter(
             content_id=self.kwargs["content_pk"]
         ).order_by("order")
-
+ 
     def get_object(self):
         pk = self.kwargs.get("pk")
         try:
@@ -413,22 +422,22 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
             raise NotFound()
         self.check_object_permissions(self.request, obj)
         return obj
-
+ 
     def perform_create(self, serializer):
         content = Content.objects.get(pk=self.kwargs["content_pk"])
         serializer.save(content=content)
-
+ 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
             self.perform_create(serializer)
-            invalidate_content(pk=self.kwargs["content_pk"])  # bust cache
+            invalidate_content(pk=self.kwargs["content_pk"])
         except Exception as e:
             return fail(message=str(e))
         return ok_created()
-
+ 
     def update(self, request, *args, **kwargs):
         partial    = kwargs.pop("partial", False)
         instance   = self.get_object()
@@ -437,19 +446,19 @@ class ContentSectionViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             self.perform_update(serializer)
-            invalidate_content(pk=str(instance.content_id))  # bust cache
+            invalidate_content(pk=str(instance.content_id))
         except Exception as e:
             return fail(message=str(e))
         return ok(data=serializer.data)
-
+ 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
         content_pk = str(instance.content_id)
+        if instance.image:
+            instance.image.delete(save=False)
         instance.delete()
-        invalidate_content(pk=content_pk)  # bust cache
+        invalidate_content(pk=content_pk)
         return ok()
-
-
 
 
 class TeamMemberViewSet(viewsets.ModelViewSet):
@@ -1590,3 +1599,39 @@ class ContactFormViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         self.perform_create(serializer)
         return ok_created()
+    
+    
+
+class SiteImageViewSet(viewsets.ModelViewSet):
+    serializer_class = SiteImageSerializer
+    parser_classes   = [MultiPartParser, FormParser, JSONParser]
+    queryset         = SiteImage.objects.select_related("uploaded_by")
+ 
+    def get_permissions(self):
+        return [AllowAny()] if self.action in ("list", "retrieve") else [EditorWrite()]
+ 
+    def list(self, request, *args, **kwargs):
+        return ok(data=SiteImageService.list())
+ 
+    def retrieve(self, request, *args, **kwargs):
+        return ok(data=SiteImageService.get(kwargs["pk"]))
+ 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        SiteImageService.create(serializer.validated_data, request.user)
+        return ok_created()
+ 
+    def destroy(self, request, *args, **kwargs):
+        SiteImageService.delete(self.get_object())
+        return ok()
+    
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        obj = self.get_object()
+        serializer = self.get_serializer(obj, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return fail(errors=serializer.errors)
+        SiteImageService.update(obj, serializer.validated_data)
+        return ok()

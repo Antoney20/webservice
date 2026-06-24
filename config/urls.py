@@ -29,6 +29,7 @@ router.register(r"careers",             views.CareerViewSet)
 router.register(r'rate-limits',         views.RateLimitViewSet,         basename='rate-limit')
 router.register(r'audit-logs',          views.AuditLogViewSet,          basename='audit-log')
 router.register(r'system-logs',         views.SystemLogViewSet,         basename='system-log')
+router.register(r'site-images',         views.SiteImageViewSet,         basename='site-images')
 
 urlpatterns = [
     path('', include(router.urls)),

@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from core.validators.email import validate_email_address
 from core.validators.file import validate_file
 from .models import (
-    Career, Invitation, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
+    Career, Invitation, SiteImage, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
     Internship, Publication, Seminar, Course, Training, News,
     Report, Download, DataCatalogue, DataCatalogueView,
     PolicyBrief, Subscription, ContactForm, RateLimit,
@@ -61,7 +61,15 @@ class UserSerializer(serializers.ModelSerializer):
         return instance
 
 
-
+class UserMiniSerializer(serializers.ModelSerializer):
+    """Slim author payload — id + name only. Used for nested `created_by`."""
+    id = serializers.UUIDField(read_only=True)
+ 
+    class Meta:
+        model = User
+        fields = ["id", "name"]
+ 
+ 
 
 
 class InviteSerializer(serializers.ModelSerializer):
@@ -122,62 +130,60 @@ class AcceptInviteSerializer(serializers.Serializer):
         inv.save(update_fields=["accepted"])
         return user
 
-class ContentSectionSerializer(serializers.ModelSerializer):
-    id    = serializers.UUIDField(read_only=True)
-    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+# ──────────────────────────────────────────────────────────────────────────
+# Content sections
+# ──────────────────────────────────────────────────────────────────────────
 
+class ContentSectionSerializer(serializers.ModelSerializer):
+    id    = serializers.CharField(read_only=True)          # cuid, not UUID
+    image = serializers.ImageField(required=False, allow_null=True, use_url=True)
+ 
     class Meta:
         model  = ContentSection
-        fields = "__all__"
-
-
+        fields = ["id", "content", "title", "body", "order",
+                  "image", "image_alt", "created_at", "updated_at"]
+ 
+ 
 class _ContentBase(serializers.ModelSerializer):
-    id         = serializers.UUIDField(read_only=True)
-    created_by = UserSerializer(read_only=True)
-    image      = serializers.ImageField(
-                     required=False,
-                     allow_null=True,
-                     allow_empty_file=True,
-                     use_url=True,
-                 )
-
+    id         = serializers.CharField(read_only=True)
+    created_by = UserMiniSerializer(read_only=True)
+    image      = serializers.ImageField(required=False, allow_null=True, use_url=True)
+ 
     class Meta:
         model            = Content
-        fields           = "__all__"
-        read_only_fields = ["created_at", "updated_at", "date", "created_by"]
-
-    def validate_image(self, value):
-        if not value:
-            return None
-        return value
-
+        read_only_fields = ["created_at", "updated_at", "date", "published_at", "created_by"]
+ 
     def validate_tags(self, value):
-        # Already a list (e.g. from JSON API)
         if isinstance(value, list):
             return value
-        # Comma-separated string from FormData e.g. "tag1, tag2"
         if isinstance(value, str):
-            # Try JSON first in case it's a stringified array
             try:
                 parsed = json.loads(value)
                 if isinstance(parsed, list):
                     return parsed
             except (json.JSONDecodeError, ValueError):
                 pass
-            # Fall back to comma-split
-            return [t.strip() for t in value.split(',') if t.strip()]
+            return [t.strip() for t in value.split(",") if t.strip()]
         return []
+ 
+ 
 class ContentListSerializer(_ContentBase):
-    """Lightweight — no sections. Used for list()."""
-    pass
-
-
-class ContentSerializer(_ContentBase):
-    """Full detail — includes nested sections ordered by `order`."""
-    sections = ContentSectionSerializer(many=True, read_only=True)
-
+    """Simple — no body, no sections."""
     class Meta(_ContentBase.Meta):
-        pass
+        fields = ["id", "title", "excerpt", "type", "date", "published_at", "status",
+                  "featured", "image", "image_alt", "category", "tags", "author_name",
+                  "created_by", "created_at", "updated_at"]
+ 
+ 
+class ContentSerializer(_ContentBase):
+    """Detail — everything, including nested sections."""
+    sections = ContentSectionSerializer(many=True, read_only=True)
+ 
+    class Meta(_ContentBase.Meta):
+        fields = ContentListSerializer.Meta.fields + ["content", "sections"]
+ 
+
+
 
 
 class TeamMemberListSerializer(serializers.ModelSerializer):
@@ -609,3 +615,20 @@ class SystemLogSerializer(serializers.ModelSerializer):
     class Meta:
         model = SystemLog
         fields = "__all__"
+        
+class SiteImageSerializer(serializers.ModelSerializer):
+    id          = serializers.CharField(read_only=True)
+    image       = serializers.ImageField(use_url=True)          # binary in, URL out
+    url         = serializers.SerializerMethodField()           # copy-able share URL
+    uploaded_by = UserMiniSerializer(read_only=True)
+ 
+    class Meta:
+        model            = SiteImage
+        fields           = ["id", "name", "description", "image", "url",
+                            "uploaded_by", "created_at"]
+        read_only_fields = ["created_at"]
+ 
+    def get_url(self, obj):
+        return obj.image.url if obj.image else None
+ 
+ 

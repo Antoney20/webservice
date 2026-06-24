@@ -150,3 +150,5 @@ def me(request):
         "role":       user.role,
         "is_active":  user.is_active,
     })
+    
+    

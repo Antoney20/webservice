@@ -796,3 +796,18 @@ class SystemLog( models.Model):
         return f"[{self.level}] {self.component}: {self.message[:60]}"
     
   
+  
+class SiteImage(CuidMixin, models.Model):
+    id          = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
+    name        = models.CharField(max_length=255)
+    description = models.TextField(null=True, blank=True)
+    image       = models.ImageField(upload_to="site/images/library/")
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name="site_images")
+    created_at  = models.DateTimeField(auto_now_add=True, db_column="createdAt")
+ 
+    class Meta:
+        db_table = "site_images"
+        ordering = ["-created_at"]          # latest first
+ 
+    def __str__(self):
+        return self.name
