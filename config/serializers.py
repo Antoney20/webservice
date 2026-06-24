@@ -302,7 +302,7 @@ class InternshipSerializer(serializers.ModelSerializer):
 
 
 LIST_FIELDS = [
-    "id", "title", "abstract", "journal", "authors", "cema_authors",
+    "id", "title", "abstract", "journal", "authors", "cema_authors", "created_at", "date_published",
     "publication_year", "publication_type", "category", "tags", "url", "updated_at",
 ]
 

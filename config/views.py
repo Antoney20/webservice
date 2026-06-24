@@ -1,6 +1,7 @@
 import json
 import logging
 import uuid
+from django.db.models.functions import Coalesce, ExtractYear
 
 from django.conf import settings
 from rest_framework import viewsets, permissions, status
@@ -47,7 +48,7 @@ logger = logging.getLogger(__name__)
 
 from core.middleware.tracking import get_client_ip
 from core.permissions import AnonPostOnly, EditorWrite, IsAuthenticated, PublicReadOnly, RequiresAdmin
-from django.db.models import Count, Sum
+from django.db.models import F, Count, Sum
 
 from .models import (
     Career, Invitation, TrainingMedia, TrainingSection, User, Content, ContentSection, TeamMember, Fellowship,
@@ -711,15 +712,39 @@ class InternshipViewSet(viewsets.ModelViewSet):
         invalidate_internship(pk=pk)
         return ok(message="Internship deleted.")
     
+# class PublicationViewSet(viewsets.ModelViewSet):
+#     queryset           = Publication.objects.select_related("created_by").all()
+#     serializer_class   = PublicationSerializer
+#     permission_classes = [EditorWrite]
+#     filterset_fields   = ["publication_type", "publication_year", "category"]
+#     search_fields      = ["title", "abstract", "journal"]
+#     ordering_fields    = ["publication_year", "date_published", "created_at"]
+#     ordering           = ["-publication_year"]
+
+
+
 class PublicationViewSet(viewsets.ModelViewSet):
-    queryset           = Publication.objects.select_related("created_by").all()
     serializer_class   = PublicationSerializer
     permission_classes = [EditorWrite]
     filterset_fields   = ["publication_type", "publication_year", "category"]
     search_fields      = ["title", "abstract", "journal"]
     ordering_fields    = ["publication_year", "date_published", "created_at"]
-    ordering           = ["-publication_year"]
+    ordering           = None  # let get_queryset own the default order
 
+    def get_queryset(self):
+        return (
+            Publication.objects
+            .select_related("created_by")
+            .annotate(
+                effective_year=Coalesce(ExtractYear("date_published"), "publication_year"),
+            )
+            .order_by(
+                F("effective_year").desc(nulls_last=True),
+                F("date_published").desc(nulls_last=True),
+                F("created_at").desc(),
+            )
+        )
+        
     def get_serializer_class(self):
         if self.action == "list":
             return PublicationListSerializer
