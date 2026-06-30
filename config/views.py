@@ -937,41 +937,27 @@ class CourseViewSet(viewsets.ModelViewSet):
 
 
 class TrainingViewSet(viewsets.ModelViewSet):
-    queryset           = Training.objects.select_related("created_by").prefetch_related("sections", "media").order_by("-created_at")
+    queryset           = Training.objects.select_related("created_by")
     permission_classes = [EditorWrite]
-    filterset_fields   = ["upcoming", "category", "featured", "mode"]
+    filterset_fields   = ["upcoming", "category", "featured", "mode", "is_public"]
     search_fields      = ["title", "description", "location", "category"]
     ordering_fields    = ["date", "created_at", "title"]
-    ordering           = ["-created_at"]
 
     def get_serializer_class(self):
-        if self.action == "list":
-            return TrainingListSerializer
-        return TrainingSerializer
+        return TrainingListSerializer if self.action == "list" else TrainingSerializer
 
     def get_queryset(self):
-        qs = super().get_queryset()
-        if self.action == "list":
-            return qs.prefetch_related(None)   
-        return qs
+        qs = Training.objects.select_related("created_by")
+        user = getattr(self.request, "user", None)
+        if not (user and user.is_authenticated):
+            qs = qs.filter(is_public=True)
+        # latest first by real date; nulls/older drop to the bottom
+        return qs.order_by(F("date").desc(nulls_last=True), "-created_at")
 
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return []
         return super().get_permissions()
-
-    def get_object(self):
-        pk = self.kwargs.get("pk")
-        try:
-            obj = Training.objects.prefetch_related("sections", "media").get(pk=uuid.UUID(pk))
-        except (ValueError, Training.DoesNotExist):
-            try:
-                obj = Training.objects.prefetch_related("sections", "media").get(pk=int(pk))
-            except (ValueError, Training.DoesNotExist):
-                from rest_framework.exceptions import NotFound
-                raise NotFound()
-        self.check_object_permissions(self.request, obj)
-        return obj
 
     def list(self, request, *args, **kwargs):
         qs         = self.filter_queryset(self.get_queryset())
@@ -989,9 +975,7 @@ class TrainingViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return fail(errors=serializer.errors)
         try:
-            instance = serializer.save(created_by=request.user)
-            self._sync_sections(instance, request.data.get("sections"))
-            self._sync_media(instance, request)
+            serializer.save(created_by=request.user)
         except IntegrityError:
             return fail(message="Failed to create training.")
         return ok_created()
@@ -1004,67 +988,16 @@ class TrainingViewSet(viewsets.ModelViewSet):
             return fail(errors=serializer.errors)
         try:
             instance = serializer.save()
-            self._sync_sections(instance, request.data.get("sections"))
-            self._sync_media(instance, request)
         except IntegrityError:
             return fail(message="Failed to update training.")
         return ok(data=self.get_serializer(instance).data)
 
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
-        # Clean up media files
-        for m in instance.media.all():
-            if m.file:
-                m.file.delete(save=False)
-        for s in instance.sections.all():
-            if s.image:
-                s.image.delete(save=False)
+        if instance.image:
+            instance.image.delete(save=False)
         instance.delete()
         return ok(message="Training deleted.")
-
-    def _sync_sections(self, instance, sections_json):
-        """Replace sections from JSON payload."""
-        if sections_json is None:
-            return
-        import json as _json
-        try:
-            sections = _json.loads(sections_json) if isinstance(sections_json, str) else sections_json
-        except (ValueError, TypeError):
-            return
-        instance.sections.all().delete()
-        for i, s in enumerate(sections):
-            TrainingSection.objects.create(
-                training  = instance,
-                title     = s.get("title") or None,
-                body      = s.get("body", ""),
-                order     = s.get("order", i),
-                image_alt = s.get("image_alt") or None,
-            )
-
-    def _sync_media(self, instance, request):
-        """Handle media_<n>_file uploads and media_<n>_url entries from FormData."""
-        import json as _json
-        media_meta_raw = request.data.get("media_meta")
-        if not media_meta_raw:
-            return
-        try:
-            meta_list = _json.loads(media_meta_raw) if isinstance(media_meta_raw, str) else media_meta_raw
-        except (ValueError, TypeError):
-            return
-
-        instance.media.all().delete()
-        for i, meta in enumerate(meta_list):
-            file_key = f"media_{i}_file"
-            file_obj = request.FILES.get(file_key)
-            TrainingMedia.objects.create(
-                training   = instance,
-                media_type = meta.get("media_type", "DOCUMENT"),
-                title      = meta.get("title") or None,
-                file       = file_obj,
-                url        = meta.get("url") or None,
-                order      = i,
-            )
-
 
 class TrainingSectionViewSet(viewsets.ModelViewSet):
     queryset           = TrainingSection.objects.select_related("training").all()

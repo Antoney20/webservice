@@ -431,13 +431,20 @@ class Training(models.Model):
     id = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
     title                = models.CharField(max_length=500)
     description          = models.TextField()
-    detailed_description = models.TextField(null=True, blank=True)
-    date                 = models.CharField(max_length=100)
+    detailed_description = models.TextField(null=True, blank=True)   # rich editor HTML
+    t_image                = models.ImageField(upload_to="site/images/trainings/", null=True, blank=True)
+
+    date                 = models.DateField(null=True, blank=True, db_index=True)  # sort key
     date_range           = models.CharField(max_length=100, null=True, blank=True)
     duration             = models.CharField(max_length=100, null=True, blank=True)
-    upcoming             = models.BooleanField(default=False, db_index=True)
-    category             = models.CharField(max_length=255, db_index=True)
     application_deadline = models.CharField(max_length=100, null=True, blank=True)
+    deadline = models.CharField(max_length=100, null=True, blank=True)
+
+    upcoming             = models.BooleanField(default=False, db_index=True)
+    is_public            = models.BooleanField(default=True,  db_index=True)
+    featured             = models.BooleanField(default=False, db_index=True)
+
+    category             = models.CharField(max_length=255, db_index=True)
     location             = models.CharField(max_length=255)
     mode                 = models.CharField(max_length=50, null=True, blank=True)  # Online / In-Person / Hybrid
     cost                 = models.CharField(max_length=100, null=True, blank=True)
@@ -447,7 +454,6 @@ class Training(models.Model):
     tags                 = models.JSONField(default=list, blank=True)
     link                 = models.URLField(null=True, blank=True)
     external_website     = models.URLField(null=True, blank=True)
-    featured             = models.BooleanField(default=False, db_index=True)
 
     created_by  = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at  = models.DateTimeField(auto_now_add=True, db_column="createdAt")
@@ -455,16 +461,18 @@ class Training(models.Model):
 
     class Meta:
         db_table = "trainings"
+        ordering = ["-date"]
         indexes  = [
             models.Index(fields=["upcoming"]),
             models.Index(fields=["category"]),
             models.Index(fields=["featured"]),
+            models.Index(fields=["is_public"]),
         ]
 
     def __str__(self):
         return self.title
-
-
+    
+    
 class TrainingSection(models.Model):
     """Rich content sections — each can have a title, body, image."""
     id        = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)

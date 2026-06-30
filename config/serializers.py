@@ -410,25 +410,47 @@ class TrainingMediaSerializer(serializers.ModelSerializer):
         return value
 
 
-class TrainingSerializer(serializers.ModelSerializer):
-    id         = serializers.UUIDField(read_only=True)
-    created_by = UserSerializer(read_only=True)
-    sections   = TrainingSectionSerializer(many=True, read_only=True)
-    media      = TrainingMediaSerializer(many=True, read_only=True)
+# class TrainingSerializer(serializers.ModelSerializer):
+#     id         = serializers.UUIDField(read_only=True)
+#     created_by = UserSerializer(read_only=True)
+#     sections   = TrainingSectionSerializer(many=True, read_only=True)
+#     media      = TrainingMediaSerializer(many=True, read_only=True)
 
-    class Meta:
-        model            = Training
-        fields           = "__all__"
-        read_only_fields = ["created_at", "updated_at", "created_by"]
+#     class Meta:
+#         model            = Training
+#         fields           = "__all__"
+#         read_only_fields = ["created_at", "updated_at", "created_by"]
 
-    def validate_tags(self, value):
-        return _parse_json_list(value)
+#     def validate_tags(self, value):
+#         return _parse_json_list(value)
 
+
+# class TrainingListSerializer(serializers.ModelSerializer):
+#     """Lightweight — no sections or media."""
+#     id         = serializers.UUIDField(read_only=True)
+#     created_by = UserSerializer(read_only=True)
+
+#     class Meta:
+#         model            = Training
+#         fields           = "__all__"
+#         read_only_fields = ["created_at", "updated_at", "created_by"]
+
+#     def validate_tags(self, value):
+#         return _parse_json_list(value)
 
 class TrainingListSerializer(serializers.ModelSerializer):
-    """Lightweight — no sections or media."""
-    id         = serializers.UUIDField(read_only=True)
-    created_by = UserSerializer(read_only=True)
+    """Lightweight card payload — no created_by."""
+    class Meta:
+        model  = Training
+        fields = [
+            "id", "title", "description", "t_image",
+            "date", "date_range", "duration", "deadline",
+            "category", "location", "mode",
+            "upcoming", "featured", "is_public", "tags",
+        ]
+    
+class TrainingSerializer(serializers.ModelSerializer):
+    created_by = UserMiniSerializer(read_only=True)
 
     class Meta:
         model            = Training
@@ -437,7 +459,8 @@ class TrainingListSerializer(serializers.ModelSerializer):
 
     def validate_tags(self, value):
         return _parse_json_list(value)
-
+    
+        
 
 class NewsSerializer(serializers.ModelSerializer):
     class Meta:
