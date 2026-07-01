@@ -1,8 +1,9 @@
 from django.urls import path, include
-from rest_framework.routers import DefaultRouter
+from django.views.generic import TemplateView
+from rest_framework.routers import SimpleRouter
 from . import views
 
-router = DefaultRouter()
+router = SimpleRouter()
 
 router.register(r'users',               views.UserViewSet,              basename='user')
 router.register(r"invitations",    views.InvitationViewSet, basename="invitation")
@@ -32,5 +33,6 @@ router.register(r'system-logs',         views.SystemLogViewSet,         basename
 router.register(r'site-images',         views.SiteImageViewSet,         basename='site-images')
 
 urlpatterns = [
+    path('', TemplateView.as_view(template_name='welcome.html'), name='api-root'),
     path('', include(router.urls)),
 ]
