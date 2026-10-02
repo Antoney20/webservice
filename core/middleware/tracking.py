@@ -48,8 +48,8 @@ class IPBlockMiddleware:
 
 
 VIOLATION_KEY       = "throttle_violations:{ip}"
-VIOLATION_THRESHOLD = 40
-VIOLATION_WINDOW    = 60 * 10  # 10 min
+VIOLATION_THRESHOLD = 200
+VIOLATION_WINDOW    = 60 * 3  # 3 min
 
 
 def record_throttle_violation(ip: str) -> None:
