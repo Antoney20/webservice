@@ -275,22 +275,20 @@ class InvitationViewSet(viewsets.ModelViewSet):
         return ok(data={"id": inv.id, "email": inv.email, "invite_link": link})
 
 
-
-
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Content
-# ──────────────────────────────────────────────────────────────────────────
-
  
+class SectionPayloadError(Exception):
+    """Raised for a malformed `sections` payload; rolls back the transaction."""
+
+
 class ContentViewSet(viewsets.ModelViewSet):
     """
     Public read, editor write. Sections are managed inline:
       sections          -> JSON array [{ id?, title, body, order, image_alt, image }]
-                           image flag is "__keep__" (leave stored file) or null (clear)
+                           image flag is "__new__" | "__keep__" | null
       section_image_{i} -> raw binary File for the section at index i (new uploads only)
     Files are written to the media server; the DB stores the path only.
+
+    Author: if `author_name` is blank/missing, the logged-in user's name is used.
     """
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     queryset = (
@@ -299,14 +297,13 @@ class ContentViewSet(viewsets.ModelViewSet):
         .prefetch_related("sections")
         .order_by("-created_at")        # latest first
     )
- 
+
     def get_permissions(self):
         return [AllowAny()] if self.action in ("list", "retrieve") else [EditorWrite()]
- 
+
     def get_serializer_class(self):
         return ContentListSerializer if self.action == "list" else ContentSerializer
- 
-    # ── read (cached) ───────────────────────────────────────────────────
+
     def list(self, request, *args, **kwargs):
         data = get_content_list()
         if data is None:
@@ -314,7 +311,7 @@ class ContentViewSet(viewsets.ModelViewSet):
             data = {"count": len(rows), "next": None, "previous": None, "results": rows}
             set_content_list(data)
         return ok(data=data)
- 
+
     def retrieve(self, request, *args, **kwargs):
         pk = kwargs["pk"]
         data = get_content_item(pk)
@@ -322,49 +319,90 @@ class ContentViewSet(viewsets.ModelViewSet):
             data = self.get_serializer(self.get_object()).data
             set_content_item(pk, data)
         return ok(data=data)
- 
+
     # ── write (invalidates cache) ───────────────────────────────────────
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
+            logger.warning("Content create validation failed: %s", serializer.errors)
             return fail(errors=serializer.errors)
-        with transaction.atomic():
-            content = serializer.save(created_by=request.user)
-            self._publish(content)
-            self._save_sections(content)
+        try:
+            with transaction.atomic():
+                content = serializer.save(
+                    created_by=request.user,
+                    author_name=self._resolve_author(),   # never null/blank
+                )
+                self._publish(content)
+                self._save_sections(content)
+        except SectionPayloadError as exc:
+            return fail(errors={"sections": [str(exc)]})
+        except Exception as exc:
+            logger.exception("Content create failed")
+            return fail(errors={"server": [f"{type(exc).__name__}: {exc}"]})
         invalidate_content()
         return ok_created()
- 
+
     def update(self, request, *args, **kwargs):
         partial = kwargs.pop("partial", False)
         content = self.get_object()
         serializer = self.get_serializer(content, data=request.data, partial=partial)
         if not serializer.is_valid():
+            logger.warning("Content update validation failed: %s", serializer.errors)
             return fail(errors=serializer.errors)
-        with transaction.atomic():
-            content = serializer.save()
-            if str(request.data.get("removeImage", "")).lower() == "true" and content.image:
-                content.image.delete(save=False)
-                content.image = None
-                content.save(update_fields=["image"])
-            self._publish(content)
-            self._save_sections(content)
+
+        extra = {}
+        # Only touch the author if the client sent the field (or it's a full PUT).
+        # Blank keeps the existing author, else falls back to the logged-in user.
+        if "author_name" in request.data or not partial:
+            extra["author_name"] = self._resolve_author(fallback=content.author_name or "")
+
+        try:
+            with transaction.atomic():
+                content = serializer.save(**extra)
+                if str(request.data.get("removeImage", "")).lower() == "true" and content.image:
+                    content.image.delete(save=False)
+                    content.image = None
+                    content.save(update_fields=["image"])
+                self._publish(content)
+                self._save_sections(content)
+        except SectionPayloadError as exc:
+            return fail(errors={"sections": [str(exc)]})
+        except Exception as exc:
+            logger.exception("Content update failed")
+            return fail(errors={"server": [f"{type(exc).__name__}: {exc}"]})
         invalidate_content(pk=str(content.pk))
         return ok(data=self.get_serializer(content).data)
- 
+
     def destroy(self, request, *args, **kwargs):
         content = self.get_object()
         pk = str(content.pk)
         content.delete()
         invalidate_content(pk=pk)
         return ok()
- 
+
     # ── helpers ─────────────────────────────────────────────────────────
+    @staticmethod
+    def _user_display_name(user) -> str:
+        """Best available display name for the logged-in user."""
+        full_name = getattr(user, "get_full_name", lambda: "")() or ""
+        return (
+            (getattr(user, "name", "") or "").strip()
+            or full_name.strip()
+            or (getattr(user, "username", "") or "").strip()
+            or (getattr(user, "email", "") or "").strip()
+            or "Unknown"
+        )
+
+    def _resolve_author(self, fallback: str = "") -> str:
+        """Author from the request; blank -> `fallback`, then logged-in user."""
+        given = (self.request.data.get("author_name") or "").strip()
+        return given or (fallback or "").strip() or self._user_display_name(self.request.user)
+
     def _publish(self, content):
         if content.status == ContentStatus.PUBLISHED and content.published_at is None:
             content.published_at = timezone.now()
             content.save(update_fields=["published_at"])
- 
+
     def _save_sections(self, content):
         raw = self.request.data.get("sections")
         if raw is None:
@@ -372,38 +410,43 @@ class ContentViewSet(viewsets.ModelViewSet):
         try:
             payload = json.loads(raw) if isinstance(raw, str) else raw
         except (TypeError, ValueError):
-            return
+            raise SectionPayloadError("`sections` is not valid JSON.")
         if not isinstance(payload, list):
-            return
- 
+            raise SectionPayloadError("`sections` must be a list.")
+
         existing = {s.id: s for s in content.sections.all()}
         keep = set()
+
         for i, sec in enumerate(payload):
+            if not isinstance(sec, dict):
+                raise SectionPayloadError(f"Section {i + 1} is malformed.")
+
             obj = existing.get(sec.get("id")) or ContentSection(content=content)
             obj.title     = sec.get("title") or None
             obj.body      = sec.get("body", "")
             obj.order     = sec.get("order", i)
             obj.image_alt = sec.get("image_alt") or None
- 
+
             file = self.request.FILES.get(f"section_image_{i}")
-            if file is not None:                       # new binary upload
+            flag = sec.get("image")
+
+            if file is not None:                      # new binary upload
                 if obj.pk and obj.image:
                     obj.image.delete(save=False)
                 obj.image = file
-            elif sec.get("image") is None:             # cleared / never set
+            elif flag is None:                        # cleared / never set
                 if obj.pk and obj.image:
                     obj.image.delete(save=False)
                 obj.image = None
-            # else "__keep__" -> leave the stored file untouched
+            # "__keep__" (or "__new__" without a file) -> leave stored file untouched
             obj.save()
             keep.add(obj.id)
- 
+
         for stale in content.sections.exclude(id__in=keep):
             if stale.image:
                 stale.image.delete(save=False)
             stale.delete()
- 
-
+            
 class ContentSectionViewSet(viewsets.ModelViewSet):
     serializer_class   = ContentSectionSerializer
     permission_classes = [EditorWrite]
