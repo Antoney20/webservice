@@ -635,9 +635,16 @@ class AuditLogSerializer(serializers.ModelSerializer):
 
 
 class SystemLogSerializer(serializers.ModelSerializer):
+    createdAt = serializers.DateTimeField(source="created_at", read_only=True)
+
     class Meta:
         model = SystemLog
-        fields = "__all__"
+        fields = [
+            "id", "level", "message", "component", "route", "method",
+            "status_code", "ip_address", "user_id", "duration",
+            "stack", "metadata", "created_at", "createdAt",
+        ]
+        read_only_fields = [f for f in fields if f != "createdAt"]
         
 class SiteImageSerializer(serializers.ModelSerializer):
     id          = serializers.CharField(read_only=True)

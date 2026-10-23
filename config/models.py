@@ -2,7 +2,7 @@ import uuid
 
 from django.db import models
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
-
+from auditlog.registry import auditlog
 
 from cuid2 import cuid_wrapper
 
@@ -563,13 +563,11 @@ class Report(CuidMixin, models.Model):
 
     def __str__(self):
         return self.title
-
 class Download(models.Model):
-    user_id = models.CharField(max_length=255, null=True, blank=True)
-    user_email = models.EmailField(null=True, blank=True)
-    report = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="downloads", db_column="reportId",)
+    user_id    = models.CharField(max_length=255, null=True, blank=True, db_column="userId")
+    user_email = models.EmailField(null=True, blank=True, db_column="userEmail")
+    report     = models.ForeignKey(Report, on_delete=models.CASCADE, related_name="downloads", db_column="reportId")
     created_at = models.DateTimeField(auto_now_add=True, db_column="createdAt")
-    # updated_at = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
     class Meta:
         db_table = "download"
@@ -716,20 +714,22 @@ class Career(models.Model):
     def __str__(self):
         return self.title
 
-class RateLimit( models.Model):
-    ip_address   = models.GenericIPAddressField()
+
+class RateLimit(models.Model):
+    ip_address   = models.GenericIPAddressField(db_column="ipAddress")
     endpoint     = models.CharField(max_length=500)
     attempts     = models.IntegerField(default=1)
-    window_start = models.DateTimeField(auto_now_add=True)
-    created_at   = models.DateTimeField(auto_now_add=True)
-    updated_at   = models.DateTimeField(auto_now=True)
+    window_start = models.DateTimeField(auto_now_add=True, db_column="windowStart")
+    created_at   = models.DateTimeField(auto_now_add=True, db_column="createdAt")
+    updated_at   = models.DateTimeField(auto_now=True, db_column="updatedAt")
 
     class Meta:
-        db_table      = "rate_limits"
+        db_table = "rate_limits"
         unique_together = [("ip_address", "endpoint")]
 
     def __str__(self):
         return f"{self.ip_address} — {self.endpoint}"
+
 
 class BlockedIP( models.Model):
     ip_address = models.GenericIPAddressField(unique=True, db_index=True)
@@ -742,25 +742,26 @@ class BlockedIP( models.Model):
     def __str__(self):
         return self.ip_address
 
-class AuditLog( models.Model):
-    id = models.AutoField(primary_key=True)
-    user_id = models.CharField(max_length=255, null=True, blank=True, db_index=True)
-    user_email = models.EmailField(null=True, blank=True)
-    action = models.CharField(max_length=255, db_index=True)
-    resource = models.CharField(max_length=255, db_index=True)
-    resource_id = models.CharField(max_length=255, null=True, blank=True)
-    method = models.CharField(max_length=20)
-    route = models.CharField(max_length=500)
-    ip_address = models.GenericIPAddressField(db_index=True)
-    user_agent = models.TextField(null=True, blank=True)
-    status_code = models.IntegerField()
-    duration = models.IntegerField(null=True, blank=True)
-    old_values = models.JSONField(null=True, blank=True)
-    new_values = models.JSONField(null=True, blank=True)
-    metadata = models.JSONField(null=True, blank=True)
-    success = models.BooleanField(default=True)
-    error_message = models.TextField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+class AuditLog(models.Model):
+    id            = models.AutoField(primary_key=True)
+    user_id       = models.CharField(max_length=255, null=True, blank=True, db_index=True, db_column="userId")
+    user_email    = models.EmailField(null=True, blank=True, db_column="userEmail")
+    action        = models.CharField(max_length=255, db_index=True)
+    resource      = models.CharField(max_length=255, db_index=True)
+    resource_id   = models.CharField(max_length=255, null=True, blank=True, db_column="resourceId")
+    method        = models.CharField(max_length=20)
+    route         = models.CharField(max_length=500)
+    ip_address    = models.GenericIPAddressField(db_index=True, db_column="ipAddress")
+    user_agent    = models.TextField(null=True, blank=True, db_column="userAgent")
+    status_code   = models.IntegerField(db_column="statusCode")
+    duration      = models.IntegerField(null=True, blank=True)
+    old_values    = models.JSONField(null=True, blank=True, db_column="oldValues")
+    new_values    = models.JSONField(null=True, blank=True, db_column="newValues")
+    metadata      = models.JSONField(null=True, blank=True)
+    success       = models.BooleanField(default=True)
+    error_message = models.TextField(null=True, blank=True, db_column="errorMessage")
+    created_at    = models.DateTimeField(auto_now_add=True, db_index=True, db_column="createdAt")
 
     class Meta:
         db_table = "audit_logs"
@@ -777,20 +778,21 @@ class AuditLog( models.Model):
 
 
 
-class SystemLog( models.Model):
-    id = models.AutoField(primary_key=True)
-    level = models.CharField(max_length=20, db_index=True)
-    message = models.TextField()
-    component = models.CharField(max_length=255, db_index=True)
-    route = models.CharField(max_length=500, null=True, blank=True)
-    method = models.CharField(max_length=20, null=True, blank=True)
-    status_code = models.IntegerField(null=True, blank=True)
-    ip_address = models.GenericIPAddressField(null=True, blank=True)
-    user_id = models.CharField(max_length=255, null=True, blank=True)
-    duration = models.IntegerField(null=True, blank=True)
-    stack = models.TextField(null=True, blank=True)
-    metadata = models.JSONField(null=True, blank=True)
-    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+class SystemLog(models.Model):
+    id          = models.AutoField(primary_key=True)
+    level       = models.CharField(max_length=20, db_index=True)
+    message     = models.TextField()
+    component   = models.CharField(max_length=255, db_index=True)
+    route       = models.CharField(max_length=500, null=True, blank=True)
+    method      = models.CharField(max_length=20, null=True, blank=True)
+    status_code = models.IntegerField(null=True, blank=True, db_column="statusCode")
+    ip_address  = models.GenericIPAddressField(null=True, blank=True, db_column="ipAddress")
+    user_id     = models.CharField(max_length=255, null=True, blank=True, db_column="userId")
+    duration    = models.IntegerField(null=True, blank=True)
+    stack       = models.TextField(null=True, blank=True)
+    metadata    = models.JSONField(null=True, blank=True)
+    created_at  = models.DateTimeField(auto_now_add=True, db_index=True, db_column="createdAt")
 
     class Meta:
         db_table = "system_logs"
@@ -803,7 +805,6 @@ class SystemLog( models.Model):
     def __str__(self):
         return f"[{self.level}] {self.component}: {self.message[:60]}"
     
-  
   
 class SiteImage(CuidMixin, models.Model):
     id          = models.CharField(max_length=255, primary_key=True, editable=False, default=generate_cuid)
@@ -819,3 +820,14 @@ class SiteImage(CuidMixin, models.Model):
  
     def __str__(self):
         return self.name
+    
+    
+for _model in (
+    Content, ContentSection, TeamMember, Fellowship, Internship, Publication,
+    Seminar, Course, Training, TrainingSection, TrainingMedia, News, Report,
+    DataCatalogue, PolicyBrief, Career, SiteImage,
+):
+    auditlog.register(_model, exclude_fields=["updated_at"])
+
+auditlog.register(User, exclude_fields=["password", "last_login", "updated_at"])
+auditlog.register(Invitation, exclude_fields=["token"])

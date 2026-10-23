@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt.token_blacklist",
     "django_filters",
     "corsheaders",
+    "auditlog",  
 ]
 
 
@@ -45,6 +46,7 @@ MIDDLEWARE = [
     # "core.middleware.media_protection.MediaProtectionMiddleware",
     "core.middleware.tracking.IPBlockMiddleware",         
     "corsheaders.middleware.CorsMiddleware",
+    "core.middleware.system_log.SystemLogMiddleware",  
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
